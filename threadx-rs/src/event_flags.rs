@@ -2,10 +2,7 @@ use core::ffi::CStr;
 use core::mem::MaybeUninit;
 
 use threadx_sys::{_tx_event_flags_create, TX_EVENT_FLAGS_GROUP};
-use threadx_sys::{
-    _tx_event_flags_get, _tx_event_flags_set,
-    ULONG,
-};
+use threadx_sys::{_tx_event_flags_get, _tx_event_flags_set, ULONG};
 
 use crate::tx_checked_call;
 
@@ -37,9 +34,9 @@ pub struct EventFlagsGroup {
 #[derive(Copy, Clone)]
 
 pub struct EventFlagsGroupHandle {
-    pub flag_group_ptr: *mut TX_EVENT_FLAGS_GROUP,
+    flag_group_ptr: *mut TX_EVENT_FLAGS_GROUP,
 }
-/// Safety: Interaction with this pointer is only done via get/publish methods which is safe to do from different threads 
+/// Safety: Interaction with this pointer is only done via get/publish methods which is safe to do from different threads
 unsafe impl Send for EventFlagsGroupHandle {}
 unsafe impl Sync for EventFlagsGroupHandle {}
 

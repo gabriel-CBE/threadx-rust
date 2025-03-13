@@ -34,6 +34,7 @@ use core::{
 };
 
 use crate::{event_flags::EventFlagsGroup, mutex::StaticMutex, WaitOption::WaitForever};
+use defmt::println;
 use static_cell::StaticCell;
 use threadx_sys::TX_MUTEX_STRUCT;
 
@@ -108,15 +109,18 @@ impl Signal {
     fn notify(&self) {
         let mut binding = SIGNALS.lock(WaitForever).unwrap();
         let state = binding.get_mut(self.state_index).unwrap();
-
+        println!("Notifying {}", self.state_index);
+        let requested_flag = 0b1 << self.state_index;
         match *state {
             SignalState::Notified => {}
             SignalState::Empty => *state = SignalState::Notified,
             SignalState::Waiting => {
                 *state = SignalState::Empty;
-                self.event_flag_handle.publish(0x1).unwrap()
+                self.event_flag_handle.publish(requested_flag).unwrap()
             }
-            SignalState::Unused => todo!(),
+            SignalState::Unused => {
+                println!("Ignoring notification, waker is connected to interrupt but nobody is listening")
+            },
         }
     }
 }
@@ -170,9 +174,9 @@ impl Executor {
                 .position(|p| SignalState::Unused == p)
                 .expect("No free task slots");
             *signals.get_mut(idx).unwrap() = SignalState::Empty;
+
             idx
         };
-
         // Signal used to wake up the thread for polling as the future moves to completion. We need to use an `Arc`
         // because, although the lifetime of `fut` is limited to this function, the underlying IO abstraction might keep
         // the signal alive for far longer. `Arc` is a thread-safe way to allow this to happen.
@@ -191,6 +195,7 @@ impl Executor {
             }
         };
 
+        println!("Reset signal for index {}", unused_index);
         // Reset the signal
         let mut signals = SIGNALS.lock(WaitForever).unwrap();
         *signals.get_mut(unused_index).unwrap() = SignalState::Unused;

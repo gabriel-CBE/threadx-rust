@@ -2,15 +2,15 @@
 #![no_std]
 
 use core::cell::RefCell;
-use core::future::Future;
+use core::future::{Future, IntoFuture};
 use core::pin::Pin;
 use core::task::{Context, Poll};
 use core::time::Duration;
 
 use alloc::boxed::Box;
-use board::{BoardMxAz3166, I2CBus, LowLevelInit};
+use board::{BoardMxAz3166, I2CBus, InputButtonFuture, LowLevelInit, BUTTONS, IO_EVENT_BUS};
 
-use cortex_m::interrupt::{self, Mutex};
+use cortex_m::interrupt::Mutex;
 use cortex_m::itm::Aligned;
 use defmt::println;
 use embedded_graphics::{
@@ -19,6 +19,7 @@ use embedded_graphics::{
 };
 use prost::Message;
 use static_cell::StaticCell;
+use stm32f4xx_hal::interrupt;
 use threadx_app::uprotocol_v1::{UAttributes, UMessage};
 use threadx_rs::allocator::ThreadXAllocator;
 use threadx_rs::event_flags::EventFlagsGroup;
@@ -40,7 +41,7 @@ static BP_MEM: StaticCell<[u8; 2048]> = StaticCell::new();
 static HEAP: StaticCell<[u8; 1024]> = StaticCell::new();
 
 static BOARD: Mutex<RefCell<Option<BoardMxAz3166<I2CBus>>>> = Mutex::new(RefCell::new(None));
-
+static EVENT_GROUP: StaticCell<EventFlagsGroup> = StaticCell::new();
 #[cortex_m_rt::entry]
 fn main() -> ! {
     let tx = threadx_rs::Builder::new(
@@ -48,11 +49,17 @@ fn main() -> ! {
         |ticks_per_second| {
             let board = BoardMxAz3166::low_level_init(ticks_per_second).unwrap();
             // ThreadX mutexes cannot be used here.
-            interrupt::free(|cs| BOARD.borrow(cs).borrow_mut().replace(board));
+            cortex_m::interrupt::free(|cs| BOARD.borrow(cs).borrow_mut().replace(board));
         },
         // Start of Application definition
         |mem_start| {
             defmt::println!("Define application. Memory starts at: {} ", mem_start);
+
+            let event_group = EVENT_GROUP.init(EventFlagsGroup::new());
+            let evt_handle = event_group.initialize(c"buttons").unwrap();
+            cortex_m::interrupt::free(|cs| {
+                IO_EVENT_BUS.borrow(cs).borrow_mut().replace(evt_handle);
+            });
 
             let bp = BP.init(BytePool::new());
 
@@ -69,13 +76,12 @@ fn main() -> ! {
             let executor = Executor::new();
 
             let thread2_fn = Box::new(move || {
-
                 // Get the display out out the board structure
                 let text_style = MonoTextStyleBuilder::new()
                     .font(&FONT_6X10)
                     .text_color(BinaryColor::On)
                     .build();
-               // executor.block_on(NeverFinished {});
+                // executor.block_on(NeverFinished {});
                 let ua = UAttributes::default();
                 let mut u_m = UMessage::default();
 
@@ -83,18 +89,38 @@ fn main() -> ! {
                 let mut buf = [0u8; 24];
                 let _ = UMessage::encode(&u_m, &mut buf.as_mut_slice()).unwrap();
 
+                let btn_a = cortex_m::interrupt::free(|cs| {
+                    let mut board = BOARD.borrow(cs).borrow_mut();
+                    board.as_mut().unwrap().btn_a.take().unwrap()
+                });
+
                 loop {
                     executor.block_on(test_async());
-                    interrupt::free(|cs| {
+                    let btn_fut = InputButtonFuture::new(&btn_a);
+                    cortex_m::interrupt::free(|cs| {
                         let mut binding = BOARD.borrow(cs).borrow_mut();
                         let board = binding.as_mut().unwrap();
                         let hts221 = board.temp_sensor.as_mut().unwrap();
                         let deg = hts221.temperature_x8(&mut board.i2c_bus.unwrap()).unwrap()
                             as f32
                             / 8.0;
-                        // println!("Current temperature: {}", deg);
+                         println!("Current temperature: {}", deg);
                     });
-                    let _ = sleep(Duration::from_secs(5));
+                    println!("Waiting on button push");
+                    executor.block_on(btn_fut.into_future());
+                    // Event flag implementation
+                    /*
+                    let _ = evt_handle.get(
+                        BUTTONS::ButtonA as u32,
+                        threadx_rs::event_flags::GetOption::WaitAllAndClear,
+                        threadx_rs::WaitOption::WaitForever,
+                    ); */
+
+                    // Future implementation
+
+                    println!("button pushed");
+
+                    let _ = sleep(Duration::from_secs(1));
                 }
             });
 

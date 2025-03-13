@@ -1,10 +1,19 @@
 #![no_std]
 use core::ffi::c_void;
+use core::future::Future;
+use core::task::Waker;
 use core::{arch::asm, cell::RefCell};
 
-use cortex_m::interrupt::{self, Mutex};
+use cortex_m::interrupt::Mutex;
 use cortex_m::peripheral::syst::SystClkSource;
+use defmt::println;
 use ssd1306::prelude::I2CInterface;
+use stm32f4xx_hal::gpio::alt::sys;
+use stm32f4xx_hal::gpio::{ExtiPin, Input, Pin, Pull};
+
+use stm32f4xx_hal::interrupt;
+use stm32f4xx_hal::pac::{EXTI, NVIC};
+use stm32f4xx_hal::syscfg::SysCfgExt;
 use stm32f4xx_hal::time::Hertz;
 use stm32f4xx_hal::{
     gpio::GpioExt,
@@ -13,13 +22,14 @@ use stm32f4xx_hal::{
     rcc::RccExt,
 };
 
-pub use hts221;
 pub use embedded_hal::i2c;
+pub use hts221;
 
 use ssd1306::{
     mode::DisplayConfig, prelude::DisplayRotation, size::DisplaySize128x64, I2CDisplayInterface,
     Ssd1306,
 };
+use threadx_rs::event_flags::EventFlagsGroupHandle;
 /// Low level initialization. The low level initialization function will
 /// perform basic low level initialization of the hardware.
 pub trait LowLevelInit {
@@ -48,25 +58,24 @@ where
     pub display: Option<DisplayType<I2C>>,
     pub temp_sensor: Option<TempSensorType<I2CBus>>,
     pub i2c_bus: Option<I2CBus>,
+    pub btn_a: Option<InputButton<'A', 4>>,
 }
 
 #[derive(Clone, Copy)]
 pub struct I2CBus {
     pub i2c: &'static Mutex<RefCell<Option<I2c<I2C1>>>>,
 }
-impl embedded_hal::i2c::ErrorType for I2CBus
-{
+impl embedded_hal::i2c::ErrorType for I2CBus {
     type Error = stm32f4xx_hal::i2c::Error;
 }
 
-impl embedded_hal::i2c::I2c for I2CBus
-{
+impl embedded_hal::i2c::I2c for I2CBus {
     fn transaction(
         &mut self,
         address: u8,
         operations: &mut [embedded_hal::i2c::Operation<'_>],
     ) -> Result<(), Self::Error> {
-        interrupt::free(|cs| {
+        cortex_m::interrupt::free(|cs| {
             let mut binding = self.i2c.borrow(cs).borrow_mut();
             let bus = binding.as_mut().unwrap();
             bus.transaction_slice(address, operations)
@@ -75,6 +84,8 @@ impl embedded_hal::i2c::I2c for I2CBus
 }
 
 static SHARED_BUS: Mutex<RefCell<Option<I2c<I2C1>>>> = Mutex::new(RefCell::new(None));
+pub static IO_EVENT_BUS: Mutex<RefCell<Option<EventFlagsGroupHandle>>> =
+    Mutex::new(RefCell::new(None));
 
 impl LowLevelInit for BoardMxAz3166<I2CBus> {
     fn low_level_init(ticks_per_second: u32) -> Result<BoardMxAz3166<I2CBus>, ()> {
@@ -116,24 +127,35 @@ impl LowLevelInit for BoardMxAz3166<I2CBus> {
         syst.enable_counter();
         syst.enable_interrupt();
 
+        let gpioa = p.GPIOA.split();
+
+        let mut syscfg = p.SYSCFG.constrain();
+        let mut exti = p.EXTI;
+
+        let mut button = gpioa.pa4.into_input();
+        button.enable_interrupt(&mut exti);
+        button.make_interrupt_source(&mut syscfg);
+        button.clear_interrupt_pending_bit();
+        button.trigger_on_edge(&mut exti, stm32f4xx_hal::gpio::Edge::Falling);
+        unsafe {
+            NVIC::unmask(button.interrupt());
+        }
+
         let gpiob = p.GPIOB.split();
+
         // Configure I2C1
         let scl = gpiob.pb8;
         let sda = gpiob.pb9;
 
         let i2c = I2c::new(p.I2C1, (scl, sda), Mode::standard(Hertz::kHz(400)), &clocks);
-        interrupt::free(|cs| SHARED_BUS.borrow(cs).replace(Some(i2c)));
-        let mut bus = I2CBus {
-            i2c: &SHARED_BUS,
-        };
+        cortex_m::interrupt::free(|cs| SHARED_BUS.borrow(cs).replace(Some(i2c)));
+        let mut bus = I2CBus { i2c: &SHARED_BUS };
         defmt::println!("Low level init");
-        
-        let hts221 =
-            hts221::Builder::new()
-                .with_data_rate(hts221::DataRate::Continuous1Hz)
-                .build(&mut bus)
-                .unwrap();
 
+        let hts221 = hts221::Builder::new()
+            .with_data_rate(hts221::DataRate::Continuous1Hz)
+            .build(&mut bus)
+            .unwrap();
 
         let interface: I2CInterface<I2CBus> = I2CDisplayInterface::new(bus);
 
@@ -158,6 +180,81 @@ impl LowLevelInit for BoardMxAz3166<I2CBus> {
             display: Some(display),
             temp_sensor: Some(hts221),
             i2c_bus: Some(bus),
+            btn_a: Some(InputButton::new(button)),
         })
     }
+}
+
+pub struct InputButton<const P: char, const N: u8> {
+    pin: Pin<P, N, Input>,
+}
+
+impl<const P: char, const N: u8> InputButton<P, N> {
+    pub fn new(pin: Pin<P, N, Input>) -> Self {
+        InputButton { pin: pin }
+    }
+    
+    fn is_high(&self) -> bool {
+       self.pin.is_high() 
+    }
+    fn is_low(&self) -> bool {
+       self.pin.is_low() 
+    }
+}
+
+pub struct InputButtonFuture<'a, const P:char, const N: u8> {
+    pin: &'a InputButton<P, N>,
+}
+
+impl<'a, const P: char, const N: u8> InputButtonFuture<'a, P, N> {
+    pub fn new(pin: &'a InputButton<P, N>) -> Self {
+        InputButtonFuture { pin: pin }
+    }
+}
+
+static BTN_WKER: Mutex<RefCell<Option<Waker>>> = Mutex::new(RefCell::new(None));
+
+impl<const P: char, const N: u8> Future for InputButtonFuture<'_, P, N> {
+    type Output = ();
+
+    fn poll(
+        self: core::pin::Pin<&mut Self>,
+        cx: &mut core::task::Context<'_>,
+    ) -> core::task::Poll<Self::Output> {
+        let waker = cx.waker().clone();
+        cortex_m::interrupt::free(|cs| {
+            BTN_WKER.borrow(cs).borrow_mut().replace(waker);
+        });
+        if self.pin.is_low() {
+            return core::task::Poll::Ready(());
+        }
+        return core::task::Poll::Pending;
+    }
+}
+
+pub enum BUTTONS {
+    ButtonA = 4,
+    ButtonB = 10,
+}
+
+/// .
+#[interrupt]
+fn EXTI4() {
+    cortex_m::interrupt::free(|cs| {
+        if let Some(wker) = BTN_WKER.borrow(cs).borrow_mut().as_ref() {
+            wker.wake_by_ref();
+        }
+/* 
+        match IO_EVENT_BUS.borrow(cs).borrow().as_ref() {
+            Some(evt) => {
+                let _ = evt.publish(BUTTONS::ButtonA as u32);
+            }
+            None => {}
+        }; */
+    });
+    unsafe {
+        (*EXTI::ptr())
+            .pr()
+            .write(|w| w.bits(1 << BUTTONS::ButtonA as u32))
+    };
 }
