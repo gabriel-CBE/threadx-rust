@@ -8,18 +8,20 @@ use core::task::{Context, Poll};
 use core::time::Duration;
 
 use alloc::boxed::Box;
-use board::{BoardMxAz3166, I2CBus, LowLevelInit, IO_EVENT_BUS};
+use board::{BoardMxAz3166, I2CBus, LowLevelInit};
 
 use cortex_m::interrupt::Mutex;
 use cortex_m::itm::Aligned;
 use defmt::println;
+use embedded_graphics::mono_font::ascii::FONT_9X18;
+use embedded_graphics::prelude::Point;
+use embedded_graphics::text::{Baseline, Text};
 use embedded_graphics::{
-    mono_font::{ascii::FONT_6X10, MonoTextStyleBuilder},
+    mono_font::MonoTextStyleBuilder,
     pixelcolor::BinaryColor,
 };
-use prost::Message;
+use embedded_graphics::Drawable;
 use static_cell::StaticCell;
-use threadx_app::uprotocol_v1::{UAttributes, UMessage};
 use threadx_rs::allocator::ThreadXAllocator;
 use threadx_rs::event_flags::EventFlagsGroup;
 use threadx_rs::executor::Executor;
@@ -54,20 +56,10 @@ fn main() -> ! {
         |mem_start| {
             defmt::println!("Define application. Memory starts at: {} ", mem_start);
 
-            let event_group = EVENT_GROUP.init(EventFlagsGroup::new());
-            let evt_handle = event_group.initialize(c"buttons").unwrap();
-            cortex_m::interrupt::free(|cs| {
-                IO_EVENT_BUS.borrow(cs).borrow_mut().replace(evt_handle);
-            });
-
             let bp = BP.init(BytePool::new());
 
             // Inefficient, creates array on the stack first.
             let bp_mem = BP_MEM.init_with(|| [0u8; 2048]);
-            let bp = bp.initialize(c"pool1", bp_mem).unwrap();
-
-            //allocate memory for the two tasks.
-            let task2_mem = bp.allocate(1024, true).unwrap();
 
             let heap: Aligned<[u8; 1024]> = Aligned([0; 1024]);
             let heap_mem = HEAP.init_with(|| heap.0);
@@ -75,18 +67,24 @@ fn main() -> ! {
             let executor = Executor::new();
 
             let thread2_fn = Box::new(move || {
-                // Get the display out out the board structure
-                let text_style = MonoTextStyleBuilder::new()
-                    .font(&FONT_6X10)
-                    .text_color(BinaryColor::On)
-                    .build();
-                // executor.block_on(NeverFinished {});
-                let ua = UAttributes::default();
-                let mut u_m = UMessage::default();
+                // Get the peripherals
+                let mut display = cortex_m::interrupt::free(|cs| {
+                    let mut board = BOARD.borrow(cs).borrow_mut();
+                    board.as_mut().unwrap().display.take().unwrap()
+                });
 
-                u_m.attributes.replace(ua);
-                let mut buf = [0u8; 24];
-                let _ = UMessage::encode(&u_m, &mut buf.as_mut_slice()).unwrap();
+                let text_style = MonoTextStyleBuilder::new()
+                .font(&FONT_9X18)
+                .text_color(BinaryColor::On)
+                .build();
+
+                display.clear_buffer();
+                Text::with_baseline("Hello Rust", Point::zero(), text_style, Baseline::Top)
+                    .draw(&mut display)
+                    .unwrap();
+
+                display.flush().unwrap();
+
 
                 let btn_a = cortex_m::interrupt::free(|cs| {
                     let mut board = BOARD.borrow(cs).borrow_mut();
@@ -102,7 +100,7 @@ fn main() -> ! {
                         let deg = hts221.temperature_x8(&mut board.i2c_bus.unwrap()).unwrap()
                             as f32
                             / 8.0;
-                         println!("Current temperature: {}", deg);
+                        println!("Current temperature: {}", deg);
                     });
                     println!("Waiting on button push");
                     executor.block_on(btn_a.wait_for_press());
@@ -116,7 +114,7 @@ fn main() -> ! {
             let thread2 = THREAD2.init(Thread::new());
 
             let _ = thread2
-                .initialize_with_autostart_box("thread2", thread2_fn, task2_mem.consume(), 1, 1, 0)
+                .initialize_with_autostart_box("thread2", thread2_fn, bp_mem, 1, 1, 0)
                 .unwrap();
 
             defmt::println!("Done with app init.");

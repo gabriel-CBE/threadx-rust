@@ -1,6 +1,6 @@
 #![no_std]
 use core::ffi::c_void;
-use core::future::Future;
+use core::future::{Future, IntoFuture};
 use core::task::Waker;
 use core::{arch::asm, cell::RefCell};
 
@@ -82,8 +82,6 @@ impl embedded_hal::i2c::I2c for I2CBus {
 }
 
 static SHARED_BUS: Mutex<RefCell<Option<I2c<I2C1>>>> = Mutex::new(RefCell::new(None));
-pub static IO_EVENT_BUS: Mutex<RefCell<Option<EventFlagsGroupHandle>>> =
-    Mutex::new(RefCell::new(None));
 
 impl LowLevelInit for BoardMxAz3166<I2CBus> {
     fn low_level_init(ticks_per_second: u32) -> Result<BoardMxAz3166<I2CBus>, ()> {
