@@ -2,13 +2,13 @@
 #![no_std]
 
 use core::cell::RefCell;
-use core::future::{Future, IntoFuture};
+use core::future::Future;
 use core::pin::Pin;
 use core::task::{Context, Poll};
 use core::time::Duration;
 
 use alloc::boxed::Box;
-use board::{BoardMxAz3166, I2CBus, InputButtonFuture, LowLevelInit, BUTTONS, IO_EVENT_BUS};
+use board::{BoardMxAz3166, I2CBus, LowLevelInit, IO_EVENT_BUS};
 
 use cortex_m::interrupt::Mutex;
 use cortex_m::itm::Aligned;
@@ -19,11 +19,10 @@ use embedded_graphics::{
 };
 use prost::Message;
 use static_cell::StaticCell;
-use stm32f4xx_hal::interrupt;
 use threadx_app::uprotocol_v1::{UAttributes, UMessage};
 use threadx_rs::allocator::ThreadXAllocator;
 use threadx_rs::event_flags::EventFlagsGroup;
-use threadx_rs::executor::{self, Executor};
+use threadx_rs::executor::Executor;
 use threadx_rs::pool::BytePool;
 
 use threadx_rs::thread::{sleep, Thread};
@@ -96,7 +95,6 @@ fn main() -> ! {
 
                 loop {
                     executor.block_on(test_async());
-                    let btn_fut = InputButtonFuture::new(&btn_a);
                     cortex_m::interrupt::free(|cs| {
                         let mut binding = BOARD.borrow(cs).borrow_mut();
                         let board = binding.as_mut().unwrap();
@@ -107,16 +105,7 @@ fn main() -> ! {
                          println!("Current temperature: {}", deg);
                     });
                     println!("Waiting on button push");
-                    executor.block_on(btn_fut.into_future());
-                    // Event flag implementation
-                    /*
-                    let _ = evt_handle.get(
-                        BUTTONS::ButtonA as u32,
-                        threadx_rs::event_flags::GetOption::WaitAllAndClear,
-                        threadx_rs::WaitOption::WaitForever,
-                    ); */
-
-                    // Future implementation
+                    executor.block_on(btn_a.wait_for_press());
 
                     println!("button pushed");
 

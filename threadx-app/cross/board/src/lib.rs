@@ -6,10 +6,8 @@ use core::{arch::asm, cell::RefCell};
 
 use cortex_m::interrupt::Mutex;
 use cortex_m::peripheral::syst::SystClkSource;
-use defmt::println;
 use ssd1306::prelude::I2CInterface;
-use stm32f4xx_hal::gpio::alt::sys;
-use stm32f4xx_hal::gpio::{ExtiPin, Input, Pin, Pull};
+use stm32f4xx_hal::gpio::{ExtiPin, Input, Pin};
 
 use stm32f4xx_hal::interrupt;
 use stm32f4xx_hal::pac::{EXTI, NVIC};
@@ -193,21 +191,25 @@ impl<const P: char, const N: u8> InputButton<P, N> {
     pub fn new(pin: Pin<P, N, Input>) -> Self {
         InputButton { pin: pin }
     }
-    
+
     fn is_high(&self) -> bool {
-       self.pin.is_high() 
+        self.pin.is_high()
     }
     fn is_low(&self) -> bool {
-       self.pin.is_low() 
+        self.pin.is_low()
+    }
+
+    pub async fn wait_for_press(&self) {
+        InputButtonFuture::new(self).await
     }
 }
 
-pub struct InputButtonFuture<'a, const P:char, const N: u8> {
+struct InputButtonFuture<'a, const P: char, const N: u8> {
     pin: &'a InputButton<P, N>,
 }
 
 impl<'a, const P: char, const N: u8> InputButtonFuture<'a, P, N> {
-    pub fn new(pin: &'a InputButton<P, N>) -> Self {
+    fn new(pin: &'a InputButton<P, N>) -> Self {
         InputButtonFuture { pin: pin }
     }
 }
@@ -244,13 +246,6 @@ fn EXTI4() {
         if let Some(wker) = BTN_WKER.borrow(cs).borrow_mut().as_ref() {
             wker.wake_by_ref();
         }
-/* 
-        match IO_EVENT_BUS.borrow(cs).borrow().as_ref() {
-            Some(evt) => {
-                let _ = evt.publish(BUTTONS::ButtonA as u32);
-            }
-            None => {}
-        }; */
     });
     unsafe {
         (*EXTI::ptr())

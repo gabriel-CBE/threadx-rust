@@ -109,7 +109,6 @@ impl Signal {
     fn notify(&self) {
         let mut binding = SIGNALS.lock(WaitForever).unwrap();
         let state = binding.get_mut(self.state_index).unwrap();
-        println!("Notifying {}", self.state_index);
         let requested_flag = 0b1 << self.state_index;
         match *state {
             SignalState::Notified => {}
@@ -195,7 +194,6 @@ impl Executor {
             }
         };
 
-        println!("Reset signal for index {}", unused_index);
         // Reset the signal
         let mut signals = SIGNALS.lock(WaitForever).unwrap();
         *signals.get_mut(unused_index).unwrap() = SignalState::Unused;
