@@ -18,7 +18,6 @@ use embedded_graphics::prelude::Point;
 use embedded_graphics::text::{Baseline, Text};
 use embedded_graphics::Drawable;
 use embedded_graphics::{mono_font::MonoTextStyleBuilder, pixelcolor::BinaryColor};
-use heapless::String;
 use static_cell::StaticCell;
 use threadx_rs::allocator::ThreadXAllocator;
 use threadx_rs::executor::Executor;
@@ -84,13 +83,7 @@ fn main() -> ! {
             let executor = Executor::new();
 
             let measure_task = Box::new(move || {
-                let (mut hts221, mut i2c) = cortex_m::interrupt::free(|cs| {
-                    let mut binding = BOARD.borrow(cs).borrow_mut();
-                    let board = binding.as_mut().unwrap();
-                    let hts221 = board.temp_sensor.take().unwrap();
-                    let i2c = board.i2c_bus.take().unwrap();
-                    (hts221, i2c)
-                });
+                let (mut hts221, mut i2c) = extract_temperature_peripherals();
 
                 loop {
                     TEMP_MEASURE.store(
@@ -217,4 +210,17 @@ fn main() -> ! {
     tx.initialize();
     println!("Exit");
     threadx_app::exit()
+}
+
+fn extract_temperature_peripherals() -> (
+    board::hts221::HTS221<I2CBus, stm32f4xx_hal::i2c::Error>,
+    I2CBus,
+) {
+    cortex_m::interrupt::free(|cs| {
+        let mut binding = BOARD.borrow(cs).borrow_mut();
+        let board = binding.as_mut().unwrap();
+        let hts221 = board.temp_sensor.take().unwrap();
+        let i2c = board.i2c_bus.take().unwrap();
+        (hts221, i2c)
+    })
 }
