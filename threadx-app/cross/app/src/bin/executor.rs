@@ -2,12 +2,12 @@
 #![no_std]
 
 use core::cell::RefCell;
-use core::future::Future;
-use core::pin::Pin;
-use core::task::{Context, Poll};
+use core::sync::atomic::{AtomicI16, AtomicU8};
 use core::time::Duration;
 
+use alloc::borrow::ToOwned;
 use alloc::boxed::Box;
+use alloc::string::ToString;
 use board::{BoardMxAz3166, I2CBus, LowLevelInit};
 
 use cortex_m::interrupt::Mutex;
@@ -16,16 +16,12 @@ use defmt::println;
 use embedded_graphics::mono_font::ascii::FONT_9X18;
 use embedded_graphics::prelude::Point;
 use embedded_graphics::text::{Baseline, Text};
-use embedded_graphics::{
-    mono_font::MonoTextStyleBuilder,
-    pixelcolor::BinaryColor,
-};
 use embedded_graphics::Drawable;
+use embedded_graphics::{mono_font::MonoTextStyleBuilder, pixelcolor::BinaryColor};
+use heapless::String;
 use static_cell::StaticCell;
 use threadx_rs::allocator::ThreadXAllocator;
-use threadx_rs::event_flags::EventFlagsGroup;
 use threadx_rs::executor::Executor;
-use threadx_rs::pool::BytePool;
 
 use threadx_rs::thread::{sleep, Thread};
 
@@ -34,15 +30,36 @@ extern crate alloc;
 #[global_allocator]
 static GLOBAL: ThreadXAllocator = ThreadXAllocator::new();
 
-static BP: StaticCell<BytePool> = StaticCell::new();
+static DISPLAY_THREAD: StaticCell<Thread> = StaticCell::new();
+static DISPLAY_THREAD_STACK: StaticCell<[u8; 2048]> = StaticCell::new();
 
-static THREAD2: StaticCell<Thread> = StaticCell::new();
+static SWITCHER_THREAD: StaticCell<Thread> = StaticCell::new();
+static SWITCHER_THREAD_STACK: StaticCell<[u8; 512]> = StaticCell::new();
 
-static BP_MEM: StaticCell<[u8; 2048]> = StaticCell::new();
+static MEASURE_THREAD: StaticCell<Thread> = StaticCell::new();
+static MEASURE_THREAD_STACK: StaticCell<[u8; 512]> = StaticCell::new();
+
 static HEAP: StaticCell<[u8; 1024]> = StaticCell::new();
 
+enum DisplayState {
+    Welcome,
+    Temperature,
+}
+
+impl From<u8> for DisplayState {
+    fn from(value: u8) -> Self {
+        match value {
+            0 => DisplayState::Welcome,
+            1 => DisplayState::Temperature,
+            _ => DisplayState::Welcome,
+        }
+    }
+}
+
+static DISPLAY_STATE: AtomicU8 = AtomicU8::new(DisplayState::Welcome as u8);
+static TEMP_MEASURE: AtomicI16 = AtomicI16::new(0);
+
 static BOARD: Mutex<RefCell<Option<BoardMxAz3166<I2CBus>>>> = Mutex::new(RefCell::new(None));
-static EVENT_GROUP: StaticCell<EventFlagsGroup> = StaticCell::new();
 #[cortex_m_rt::entry]
 fn main() -> ! {
     let tx = threadx_rs::Builder::new(
@@ -56,65 +73,141 @@ fn main() -> ! {
         |mem_start| {
             defmt::println!("Define application. Memory starts at: {} ", mem_start);
 
-            let bp = BP.init(BytePool::new());
-
             // Inefficient, creates array on the stack first.
-            let bp_mem = BP_MEM.init_with(|| [0u8; 2048]);
+            let display_thread_stack = DISPLAY_THREAD_STACK.init_with(|| [0u8; 2048]);
+            let measure_thread_stack = MEASURE_THREAD_STACK.init_with(|| [0u8; 512]);
+            let switcher_thread_stack = SWITCHER_THREAD_STACK.init_with(|| [0u8; 512]);
 
             let heap: Aligned<[u8; 1024]> = Aligned([0; 1024]);
             let heap_mem = HEAP.init_with(|| heap.0);
             GLOBAL.initialize(heap_mem).unwrap();
             let executor = Executor::new();
 
-            let thread2_fn = Box::new(move || {
+            let measure_task = Box::new(move || {
+                let (mut hts221, mut i2c) = cortex_m::interrupt::free(|cs| {
+                    let mut binding = BOARD.borrow(cs).borrow_mut();
+                    let board = binding.as_mut().unwrap();
+                    let hts221 = board.temp_sensor.take().unwrap();
+                    let i2c = board.i2c_bus.take().unwrap();
+                    (hts221, i2c)
+                });
+
+                loop {
+                    TEMP_MEASURE.store(
+                        hts221.temperature_x8(&mut i2c).unwrap(),
+                        core::sync::atomic::Ordering::Relaxed,
+                    );
+                    let _ = sleep(Duration::from_secs(1));
+                }
+            });
+
+            let switcher_task = Box::new(move || {
+                let btn_a = cortex_m::interrupt::free(|cs| {
+                    let mut board = BOARD.borrow(cs).borrow_mut();
+                    board.as_mut().unwrap().btn_a.take().unwrap()
+                });
+                loop {
+                    executor.block_on(async {
+                        // Await full button press
+                        btn_a.wait_for_button_pressed().await;
+                        btn_a.wait_for_button_released().await;
+
+                        let state = DisplayState::from(
+                            DISPLAY_STATE.load(core::sync::atomic::Ordering::Relaxed),
+                        );
+                        let new_state = match state {
+                            DisplayState::Welcome => DisplayState::Temperature,
+                            DisplayState::Temperature => DisplayState::Welcome,
+                        };
+                        DISPLAY_STATE.store(new_state as u8, core::sync::atomic::Ordering::Relaxed);
+                    });
+                }
+            });
+
+            let display_task = Box::new(move || {
                 // Get the peripherals
                 let mut display = cortex_m::interrupt::free(|cs| {
                     let mut board = BOARD.borrow(cs).borrow_mut();
                     board.as_mut().unwrap().display.take().unwrap()
                 });
-
-                let text_style = MonoTextStyleBuilder::new()
-                .font(&FONT_9X18)
-                .text_color(BinaryColor::On)
-                .build();
-
-                display.clear_buffer();
-                Text::with_baseline("Hello Rust", Point::zero(), text_style, Baseline::Top)
-                    .draw(&mut display)
-                    .unwrap();
-
-                display.flush().unwrap();
-
-
-                let btn_a = cortex_m::interrupt::free(|cs| {
-                    let mut board = BOARD.borrow(cs).borrow_mut();
-                    board.as_mut().unwrap().btn_a.take().unwrap()
-                });
-
                 loop {
-                    executor.block_on(test_async());
-                    cortex_m::interrupt::free(|cs| {
-                        let mut binding = BOARD.borrow(cs).borrow_mut();
-                        let board = binding.as_mut().unwrap();
-                        let hts221 = board.temp_sensor.as_mut().unwrap();
-                        let deg = hts221.temperature_x8(&mut board.i2c_bus.unwrap()).unwrap()
-                            as f32
-                            / 8.0;
-                        println!("Current temperature: {}", deg);
-                    });
-                    println!("Waiting on button push");
-                    executor.block_on(btn_a.wait_for_press());
+                    let text_style = MonoTextStyleBuilder::new()
+                        .font(&FONT_9X18)
+                        .text_color(BinaryColor::On)
+                        .build();
 
-                    println!("button pushed");
+                    display.clear_buffer();
 
-                    let _ = sleep(Duration::from_secs(1));
+                    let state = DisplayState::from(
+                        DISPLAY_STATE.load(core::sync::atomic::Ordering::Relaxed),
+                    );
+
+                    match state {
+                        DisplayState::Welcome => {
+                            Text::with_baseline(
+                                "Welcome!",
+                                Point::zero(),
+                                text_style,
+                                Baseline::Top,
+                            )
+                            .draw(&mut display)
+                            .unwrap();
+                        }
+                        DisplayState::Temperature => {
+                            let mut text = "Temperature: \n".to_owned();
+                            let temp = (TEMP_MEASURE.load(core::sync::atomic::Ordering::Relaxed)
+                                as f32
+                                / 8.0)
+                                .to_string();
+                            text.push_str(&temp);
+                            text.push_str("C");
+
+                            Text::with_baseline(&text, Point::zero(), text_style, Baseline::Top)
+                                .draw(&mut display)
+                                .unwrap();
+                        }
+                    }
+
+                    display.flush().unwrap();
+                    let _ = sleep(Duration::from_millis(200));
                 }
             });
 
-            let thread2 = THREAD2.init(Thread::new());
+            let display_thread = DISPLAY_THREAD.init(Thread::new());
+            let measure_thread = MEASURE_THREAD.init(Thread::new());
+            let switcher_thread = SWITCHER_THREAD.init(Thread::new());
 
-            let _ = thread2
-                .initialize_with_autostart_box("thread2", thread2_fn, bp_mem, 1, 1, 0)
+            let _ = display_thread
+                .initialize_with_autostart_box(
+                    "measure_thread",
+                    display_task,
+                    display_thread_stack,
+                    1,
+                    1,
+                    0,
+                )
+                .unwrap();
+
+            let _ = measure_thread
+                .initialize_with_autostart_box(
+                    "measure_thread",
+                    measure_task,
+                    measure_thread_stack,
+                    1,
+                    1,
+                    0,
+                )
+                .unwrap();
+
+            let _ = switcher_thread
+                .initialize_with_autostart_box(
+                    "switcher_thread",
+                    switcher_task,
+                    switcher_thread_stack,
+                    1,
+                    1,
+                    0,
+                )
                 .unwrap();
 
             defmt::println!("Done with app init.");
@@ -124,18 +217,4 @@ fn main() -> ! {
     tx.initialize();
     println!("Exit");
     threadx_app::exit()
-}
-
-async fn test_async() {
-    println!("Hello from async runtime");
-}
-struct NeverFinished {}
-
-impl Future for NeverFinished {
-    type Output = ();
-
-    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-        let _w1 = cx.waker().clone();
-        Poll::Pending
-    }
 }

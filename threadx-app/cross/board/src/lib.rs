@@ -6,6 +6,7 @@ use core::{arch::asm, cell::RefCell};
 
 use cortex_m::interrupt::Mutex;
 use cortex_m::peripheral::syst::SystClkSource;
+use defmt::println;
 use ssd1306::prelude::I2CInterface;
 use stm32f4xx_hal::gpio::{ExtiPin, Input, Pin};
 
@@ -132,7 +133,7 @@ impl LowLevelInit for BoardMxAz3166<I2CBus> {
         button.enable_interrupt(&mut exti);
         button.make_interrupt_source(&mut syscfg);
         button.clear_interrupt_pending_bit();
-        button.trigger_on_edge(&mut exti, stm32f4xx_hal::gpio::Edge::Falling);
+        button.trigger_on_edge(&mut exti, stm32f4xx_hal::gpio::Edge::RisingFalling);
         unsafe {
             NVIC::unmask(button.interrupt());
         }
@@ -185,6 +186,11 @@ pub struct InputButton<const P: char, const N: u8> {
     pin: Pin<P, N, Input>,
 }
 
+enum ButtonState {
+    Pressed,
+    Released,
+}
+
 impl<const P: char, const N: u8> InputButton<P, N> {
     pub fn new(pin: Pin<P, N, Input>) -> Self {
         InputButton { pin: pin }
@@ -197,18 +203,26 @@ impl<const P: char, const N: u8> InputButton<P, N> {
         self.pin.is_low()
     }
 
-    pub async fn wait_for_press(&self) {
-        InputButtonFuture::new(self).await
+    pub async fn wait_for_button_pressed(&self) {
+        InputButtonFuture::new(self, ButtonState::Pressed).await
+    }
+
+    pub async fn wait_for_button_released(&self) {
+        InputButtonFuture::new(self, ButtonState::Released).await
     }
 }
 
 struct InputButtonFuture<'a, const P: char, const N: u8> {
     pin: &'a InputButton<P, N>,
+    expected_button_state: ButtonState,
 }
 
 impl<'a, const P: char, const N: u8> InputButtonFuture<'a, P, N> {
-    fn new(pin: &'a InputButton<P, N>) -> Self {
-        InputButtonFuture { pin: pin }
+    fn new(pin: &'a InputButton<P, N>, expected_state: ButtonState) -> Self {
+        InputButtonFuture {
+            pin: pin,
+            expected_button_state: expected_state,
+        }
     }
 }
 
@@ -225,9 +239,18 @@ impl<const P: char, const N: u8> Future for InputButtonFuture<'_, P, N> {
         cortex_m::interrupt::free(|cs| {
             BTN_WKER.borrow(cs).borrow_mut().replace(waker);
         });
-        if self.pin.is_low() {
-            return core::task::Poll::Ready(());
-        }
+        match self.expected_button_state {
+            ButtonState::Pressed => {
+                if self.pin.is_low() {
+                    return core::task::Poll::Ready(());
+                }
+            }
+            ButtonState::Released => {
+                if self.pin.is_high() {
+                    return core::task::Poll::Ready(());
+                }
+            }
+        };
         return core::task::Poll::Pending;
     }
 }

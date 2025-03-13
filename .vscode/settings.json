@@ -11,6 +11,7 @@
         "Cargo.toml",
         "threadx-app/cross/Cargo.toml",
       ],
-      "rust-analyzer.numThreads": 1,
+    "rust-analyzer.numThreads": 1,
+    "vim.leader": ",",
   
 }
