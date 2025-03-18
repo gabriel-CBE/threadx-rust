@@ -1,12 +1,11 @@
 #![no_std]
 use core::ffi::c_void;
-use core::future::{Future, IntoFuture};
+use core::future::Future;
 use core::task::Waker;
 use core::{arch::asm, cell::RefCell};
 
 use cortex_m::interrupt::Mutex;
 use cortex_m::peripheral::syst::SystClkSource;
-use defmt::println;
 use ssd1306::prelude::I2CInterface;
 use stm32f4xx_hal::gpio::{ExtiPin, Input, Pin};
 
@@ -28,7 +27,6 @@ use ssd1306::{
     mode::DisplayConfig, prelude::DisplayRotation, size::DisplaySize128x64, I2CDisplayInterface,
     Ssd1306,
 };
-use threadx_rs::event_flags::EventFlagsGroupHandle;
 /// Low level initialization. The low level initialization function will
 /// perform basic low level initialization of the hardware.
 pub trait LowLevelInit {

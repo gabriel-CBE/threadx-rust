@@ -29,11 +29,12 @@ DEALINGS IN THE SOFTWARE.
 use core::{
     future::{Future, IntoFuture},
     mem::MaybeUninit,
+    pin::{self, Pin},
     sync::atomic::AtomicBool,
     task::{Context, Poll, Waker},
 };
 
-use crate::{event_flags::EventFlagsGroup, mutex::StaticMutex, WaitOption::WaitForever};
+use crate::{event_flags::EventFlagsGroup, mutex::Mutex, WaitOption::WaitForever};
 use defmt::println;
 use static_cell::StaticCell;
 use threadx_sys::TX_MUTEX_STRUCT;
@@ -55,25 +56,31 @@ enum SignalState {
 
 static EXECUTOR_EVENT: StaticCell<EventFlagsGroup> = StaticCell::new();
 static mut MUTEX_S: TX_MUTEX_STRUCT = unsafe { MaybeUninit::zeroed().assume_init() };
-static SIGNALS: StaticMutex<[SignalState; 31]> =
-    StaticMutex::new([SignalState::Unused; 31], &raw mut MUTEX_S);
+
+static SIGNALS: StaticCell<Mutex<[SignalState; 31]>> = StaticCell::new();
 
 struct Signal {
     state_index: usize,
     event_flag_handle: EventFlagsGroupHandle,
+    signal_mtx: &'static Mutex<[SignalState; 31]>,
 }
 static EXECUTOR_INITIALIZED: AtomicBool = AtomicBool::new(false);
 // TODO: Does not work for more then one signal. Should work for 32 (number of event_flags))
 impl Signal {
-    fn new(event_flag_handle: EventFlagsGroupHandle, index: usize) -> Self {
+    fn new(
+        event_flag_handle: EventFlagsGroupHandle,
+        index: usize,
+        signal_mtx: &'static Mutex<[SignalState; 31]>,
+    ) -> Self {
         Self {
             state_index: index,
             event_flag_handle: event_flag_handle,
+            signal_mtx: signal_mtx,
         }
     }
 
     fn wait(&self) {
-        let mut binding = SIGNALS.lock(WaitForever).unwrap();
+        let mut binding = self.signal_mtx.lock(WaitForever).unwrap();
         let state = binding.get_mut(self.state_index).unwrap();
         match *state {
             SignalState::Notified => *state = SignalState::Empty,
@@ -107,7 +114,7 @@ impl Signal {
     }
 
     fn notify(&self) {
-        let mut binding = SIGNALS.lock(WaitForever).unwrap();
+        let mut binding = self.signal_mtx.lock(WaitForever).unwrap();
         let state = binding.get_mut(self.state_index).unwrap();
         let requested_flag = 0b1 << self.state_index;
         match *state {
@@ -119,7 +126,7 @@ impl Signal {
             }
             SignalState::Unused => {
                 println!("Ignoring notification, waker is connected to interrupt but nobody is listening")
-            },
+            }
         }
     }
 }
@@ -136,6 +143,7 @@ impl alloc::task::Wake for Signal {
 #[derive(Clone, Copy)]
 pub struct Executor {
     event_handle: EventFlagsGroupHandle,
+    signal_mtx: &'static Mutex<[SignalState; 31]>,
 }
 
 impl Executor {
@@ -144,8 +152,12 @@ impl Executor {
         if EXECUTOR_INITIALIZED.load(core::sync::atomic::Ordering::Acquire) {
             panic!("Executor initialized twice");
         };
-
-        SIGNALS.initialize(c"signal_mtx", false).unwrap();
+        let signal_ref = SIGNALS.init(Mutex::new([SignalState::Unused; 31]));
+        let mut signal_mtx = Pin::new(signal_ref);
+        signal_mtx
+            .as_mut()
+            .initialize(c"signal_mtx", false)
+            .unwrap();
         let evt = EXECUTOR_EVENT.init(EventFlagsGroup::new());
         let executor_event_handle = evt.initialize(c"ExecutorGroup").unwrap();
 
@@ -153,6 +165,8 @@ impl Executor {
 
         Executor {
             event_handle: executor_event_handle,
+            //Safety: We give out a shared reference so the mutex struct cannot be moved
+            signal_mtx: unsafe { signal_mtx.get_unchecked_mut() },
         }
     }
     /// Block the thread until the future is ready.
@@ -167,7 +181,7 @@ impl Executor {
         let mut fut = core::pin::pin!(fut.into_future());
 
         let unused_index = {
-            let mut signals = SIGNALS.lock(WaitForever).unwrap();
+            let mut signals = self.signal_mtx.lock(WaitForever).unwrap();
             let idx = signals
                 .into_iter()
                 .position(|p| SignalState::Unused == p)
@@ -180,7 +194,11 @@ impl Executor {
         // because, although the lifetime of `fut` is limited to this function, the underlying IO abstraction might keep
         // the signal alive for far longer. `Arc` is a thread-safe way to allow this to happen.
         // TODO: Investigate ways to reuse this `Arc<Signal>`... perhaps via a `static`?
-        let signal = alloc::sync::Arc::new(Signal::new(self.event_handle, unused_index));
+        let signal = alloc::sync::Arc::new(Signal::new(
+            self.event_handle,
+            unused_index,
+            self.signal_mtx,
+        ));
 
         // Create a context that will be passed to the future.
         let waker = Waker::from(alloc::sync::Arc::clone(&signal));
@@ -195,7 +213,7 @@ impl Executor {
         };
 
         // Reset the signal
-        let mut signals = SIGNALS.lock(WaitForever).unwrap();
+        let mut signals = self.signal_mtx.lock(WaitForever).unwrap();
         *signals.get_mut(unused_index).unwrap() = SignalState::Unused;
 
         item

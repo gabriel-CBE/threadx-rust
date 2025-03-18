@@ -2,6 +2,7 @@
 #![no_std]
 
 use core::cell::RefCell;
+use core::mem;
 use core::net::{Ipv4Addr, SocketAddr};
 use core::sync::atomic::AtomicU32;
 use core::time::Duration;
@@ -112,14 +113,21 @@ fn main() -> ! {
 
             // Get the peripherals
             let display_ref = DISPLAY.init(Mutex::new(None));
-            let _ = display_ref.initialize(c"display_mtx", false).unwrap();
+            // Create fresh reborrow
+            let mut binding = core::pin::Pin::new(&mut *display_ref);
+            let mut pinned_display_ref = binding.as_mut();
+            // Initialize the mutex
+            let _ = pinned_display_ref
+                .as_mut()
+                .initialize(c"display_mtx", false)
+                .unwrap();
             let display = interrupt::free(|cs| {
                 let mut board = BOARD.borrow(cs).borrow_mut();
                 board.as_mut().unwrap().display.take().unwrap()
             });
             {
                 // Temporary scope to hold the lock
-                let mut display_guard = display_ref.lock(WaitForever).unwrap();
+                let mut display_guard = pinned_display_ref.lock(WaitForever).unwrap();
                 display_guard.replace(display);
             }
             let (hts211, i2c) = interrupt::free(|cs| {
@@ -143,6 +151,10 @@ fn main() -> ! {
             // Static Cell since we need an allocated but uninitialized block of memory
             let wifi_thread_stack = WIFI_THREAD_STACK.init_with(|| [0u8; 4096]);
             let wifi_thread: &'static mut Thread = WIFI_THREAD.init(Thread::new());
+
+            // Why o why?!?
+            let _ = mem::replace(display_ref, Mutex::new(None));
+
             let _ = wifi_thread
                 .initialize_with_autostart_box(
                     "wifi_thread",
@@ -256,7 +268,7 @@ fn print_text(text: &str, display: &mut DisplayType<I2CBus>) {
 pub fn do_network(
     recv: QueueReceiver<Event>,
     evt_handle: EventFlagsGroupHandle,
-    display: &Mutex<Option<DisplayType<I2CBus>>>,
+    display: & Mutex<Option<DisplayType<I2CBus>>>,
 ) -> ! {
     defmt::println!("Initializing Network");
     // Initialize the globlal async executor
