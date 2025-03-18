@@ -29,7 +29,6 @@ DEALINGS IN THE SOFTWARE.
 use core::{
     future::{Future, IntoFuture},
     mem::MaybeUninit,
-    pin::{self, Pin},
     sync::atomic::AtomicBool,
     task::{Context, Poll, Waker},
 };
@@ -153,7 +152,8 @@ impl Executor {
             panic!("Executor initialized twice");
         };
         let signal_ref = SIGNALS.init(Mutex::new([SignalState::Unused; 31]));
-        let mut signal_mtx = Pin::new(signal_ref);
+        let x = alloc::boxed::Box::pin(1);
+        let mut signal_mtx = core::pin::Pin::static_mut(signal_ref);
         signal_mtx
             .as_mut()
             .initialize(c"signal_mtx", false)

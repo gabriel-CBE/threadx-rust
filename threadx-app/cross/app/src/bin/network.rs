@@ -114,7 +114,7 @@ fn main() -> ! {
             // Get the peripherals
             let display_ref = DISPLAY.init(Mutex::new(None));
             // Create fresh reborrow
-            let mut binding = core::pin::Pin::new(&mut *display_ref);
+            let mut binding = core::pin::Pin::static_mut(display_ref);
             let mut pinned_display_ref = binding.as_mut();
             // Initialize the mutex
             let _ = pinned_display_ref
@@ -152,13 +152,10 @@ fn main() -> ! {
             let wifi_thread_stack = WIFI_THREAD_STACK.init_with(|| [0u8; 4096]);
             let wifi_thread: &'static mut Thread = WIFI_THREAD.init(Thread::new());
 
-            // Why o why?!?
-            let _ = mem::replace(display_ref, Mutex::new(None));
-
             let _ = wifi_thread
                 .initialize_with_autostart_box(
                     "wifi_thread",
-                    Box::new(move || do_network(receiver, evt_handle, display_ref)),
+                    Box::new(move || do_network(receiver, evt_handle, &pinned_display_ref)),
                     wifi_thread_stack,
                     4,
                     4,

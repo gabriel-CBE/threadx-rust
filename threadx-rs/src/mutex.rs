@@ -1,5 +1,6 @@
 use core::cell::UnsafeCell;
 use core::ffi::CStr;
+use core::marker::PhantomPinned;
 use core::mem::MaybeUninit;
 use core::ops::Deref;
 use core::ops::DerefMut;
@@ -37,6 +38,7 @@ pub struct Mutex<T> {
     inner: UnsafeCell<T>,
     mutex: UnsafeCell<MaybeUninit<TX_MUTEX>>,
     initialized: bool,
+    phanton: PhantomPinned,
 }
 /// Safety: Initialization is done via a &mut reference hence thread safe
 unsafe impl<T: Send> Send for Mutex<T> {}
@@ -85,6 +87,7 @@ impl<T> Mutex<T> {
             inner: UnsafeCell::new(inner),
             mutex: UnsafeCell::new(MaybeUninit::<TX_MUTEX>::uninit()),
             initialized: false,
+            phanton: PhantomPinned
         }
     }
 }
