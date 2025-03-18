@@ -1,3 +1,6 @@
+use super::error::TxError;
+use super::WaitOption;
+use crate::tx_checked_call;
 use core::cell::UnsafeCell;
 use core::ffi::CStr;
 use core::marker::PhantomPinned;
@@ -5,26 +8,6 @@ use core::mem::MaybeUninit;
 use core::ops::Deref;
 use core::ops::DerefMut;
 use core::pin::Pin;
-
-/*
-UINT        _tx_mutex_create(TX_MUTEX *mutex_ptr, CHAR *name_ptr, UINT inherit);
-UINT        _tx_mutex_delete(TX_MUTEX *mutex_ptr);
-UINT        _tx_mutex_get(TX_MUTEX *mutex_ptr, ULONG wait_option);
-UINT        _tx_mutex_info_get(TX_MUTEX *mutex_ptr, CHAR **name, ULONG *count, TX_THREAD **owner,
-                    TX_THREAD **first_suspended, ULONG *suspended_count,
-                    TX_MUTEX **next_mutex);
-UINT        _tx_mutex_performance_info_get(TX_MUTEX *mutex_ptr, ULONG *puts, ULONG *gets,
-                    ULONG *suspensions, ULONG *timeouts, ULONG *inversions, ULONG *inheritances);
-UINT        _tx_mutex_performance_system_info_get(ULONG *puts, ULONG *gets, ULONG *suspensions, ULONG *timeouts,
-                    ULONG *inversions, ULONG *inheritances);
-UINT        _tx_mutex_prioritize(TX_MUTEX *mutex_ptr);
-UINT        _tx_mutex_put(TX_MUTEX *mutex_ptr);
-
-*/
-use crate::tx_checked_call;
-
-use super::error::TxError;
-use super::WaitOption;
 use defmt::error;
 use num_traits::FromPrimitive;
 use thiserror_no_std::Error;
@@ -38,7 +21,7 @@ pub struct Mutex<T> {
     inner: UnsafeCell<T>,
     mutex: UnsafeCell<MaybeUninit<TX_MUTEX>>,
     initialized: bool,
-    phanton: PhantomPinned,
+    _phantom: PhantomPinned,
 }
 /// Safety: Initialization is done via a &mut reference hence thread safe
 unsafe impl<T: Send> Send for Mutex<T> {}
@@ -87,12 +70,12 @@ impl<T> Mutex<T> {
             inner: UnsafeCell::new(inner),
             mutex: UnsafeCell::new(MaybeUninit::<TX_MUTEX>::uninit()),
             initialized: false,
-            phanton: PhantomPinned
+            _phantom: PhantomPinned,
         }
     }
 }
 impl<T> Mutex<T> {
-    // Initialize a pinned mutex. Pin is necessary since the mutex control block is not allowed to move after initialisation. 
+    // Initialize a pinned mutex. Pin is necessary since the mutex control block is not allowed to move after initialisation.
     pub fn initialize(mut self: Pin<&mut Self>, name: &CStr, inherit: bool) -> Result<(), TxError> {
         if self.initialized {
             // If mutex was already initialized we just return Ok
