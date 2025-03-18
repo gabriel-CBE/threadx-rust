@@ -2,7 +2,6 @@
 #![no_std]
 
 use core::cell::RefCell;
-use core::mem;
 use core::net::{Ipv4Addr, SocketAddr};
 use core::sync::atomic::AtomicU32;
 use core::time::Duration;
@@ -114,8 +113,8 @@ fn main() -> ! {
             // Get the peripherals
             let display_ref = DISPLAY.init(Mutex::new(None));
             // Create fresh reborrow
-            let mut binding = core::pin::Pin::static_mut(display_ref);
-            let mut pinned_display_ref = binding.as_mut();
+            let mut pinned_display = core::pin::Pin::static_mut(display_ref);
+            let mut pinned_display_ref = pinned_display.as_mut();
             // Initialize the mutex
             let _ = pinned_display_ref
                 .as_mut()
@@ -155,7 +154,7 @@ fn main() -> ! {
             let _ = wifi_thread
                 .initialize_with_autostart_box(
                     "wifi_thread",
-                    Box::new(move || do_network(receiver, evt_handle, &pinned_display_ref)),
+                    Box::new(move || do_network(receiver, evt_handle, &pinned_display)),
                     wifi_thread_stack,
                     4,
                     4,
