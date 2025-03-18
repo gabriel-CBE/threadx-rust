@@ -1,0 +1,8 @@
+= Application architecture
+
+== Executor example
+
+* Display, Switcher and Measurement thread
+* Switcher uses Async executor to handle button presses
+* The measurement thread regularly (1s) updates a global structure with the
+  current temperature * 
