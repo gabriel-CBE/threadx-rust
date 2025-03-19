@@ -40,6 +40,8 @@ impl<T: core::marker::Copy + 'static> Queue<T> {
         Queue(core::mem::MaybeUninit::uninit(), core::marker::PhantomData)
     }
     //TODO: Queue must not necessary live for 'static but can live as long as the memory block does
+    // -- The static borrow pins the queue control structure. If static is removed most probably we need to check if the structure
+    // -- is allowed to move
     pub fn initialize(
         &'static mut self,
         name: &CStr,

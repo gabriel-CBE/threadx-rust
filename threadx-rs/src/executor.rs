@@ -152,7 +152,6 @@ impl Executor {
             panic!("Executor initialized twice");
         };
         let signal_ref = SIGNALS.init(Mutex::new([SignalState::Unused; 31]));
-        let x = alloc::boxed::Box::pin(1);
         let mut signal_mtx = core::pin::Pin::static_mut(signal_ref);
         signal_mtx
             .as_mut()

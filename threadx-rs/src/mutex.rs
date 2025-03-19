@@ -62,8 +62,6 @@ pub enum MutexError {
     PoisonError,
 }
 
-// Mutex implementation
-
 impl<T> Mutex<T> {
     pub const fn new(inner: T) -> Mutex<T> {
         Mutex {

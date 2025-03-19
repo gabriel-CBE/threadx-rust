@@ -52,7 +52,8 @@ impl EventFlagsGroup {
 }
 
 impl EventFlagsGroup {
-    // Since this takes a mut borrow for 'static it cannot be initialized twice.
+    // Since this takes a mut borrow for 'static it cannot be initialized twice. This also pins the control
+    // struct TX_EVENT_FLAGS_GROUP once initialized is called.
     pub fn initialize(&'static mut self, name: &CStr) -> Result<EventFlagsGroupHandle, TxError> {
         let group_ptr = self.flag_group.as_mut_ptr();
 
