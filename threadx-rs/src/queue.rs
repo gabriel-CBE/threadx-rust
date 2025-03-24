@@ -1,22 +1,3 @@
-/*
-UINT        _tx_queue_create(TX_QUEUE *queue_ptr, CHAR *name_ptr, UINT message_size,
-                        VOID *queue_start, ULONG queue_size);
-UINT        _tx_queue_delete(TX_QUEUE *queue_ptr);
-UINT        _tx_queue_flush(TX_QUEUE *queue_ptr);
-UINT        _tx_queue_info_get(TX_QUEUE *queue_ptr, CHAR **name, ULONG *enqueued, ULONG *available_storage,
-                    TX_THREAD **first_suspended, ULONG *suspended_count, TX_QUEUE **next_queue);
-UINT        _tx_queue_performance_info_get(TX_QUEUE *queue_ptr, ULONG *messages_sent, ULONG *messages_received,
-                    ULONG *empty_suspensions, ULONG *full_suspensions, ULONG *full_errors, ULONG *timeouts);
-UINT        _tx_queue_performance_system_info_get(ULONG *messages_sent, ULONG *messages_received,
-                    ULONG *empty_suspensions, ULONG *full_suspensions, ULONG *full_errors, ULONG *timeouts);
-UINT        _tx_queue_prioritize(TX_QUEUE *queue_ptr);
-UINT        _tx_queue_receive(TX_QUEUE *queue_ptr, VOID *destination_ptr, ULONG wait_option);
-UINT        _tx_queue_send(TX_QUEUE *queue_ptr, VOID *source_ptr, ULONG wait_option);
-UINT        _tx_queue_send_notify(TX_QUEUE *queue_ptr, VOID (*queue_send_notify)(TX_QUEUE *notify_queue_ptr));
-UINT        _tx_queue_front_send(TX_QUEUE *queue_ptr, VOID *source_ptr, ULONG wait_option);
-
-*/
-
 use super::{error::TxError, WaitOption};
 use crate::{tx_checked_call, tx_checked_call_no_log};
 use core::mem::size_of;
@@ -40,8 +21,7 @@ impl<T: core::marker::Copy + 'static> Queue<T> {
         Queue(core::mem::MaybeUninit::uninit(), core::marker::PhantomData)
     }
     //TODO: Queue must not necessary live for 'static but can live as long as the memory block does
-    // -- The static borrow pins the queue control structure. If static is removed most probably we need to check if the structure
-    // -- is allowed to move
+    //      The static mut borrow pins the queue control structure which is necessary due to the intrusive linked list the struct is part of.
     pub fn initialize(
         &'static mut self,
         name: &CStr,

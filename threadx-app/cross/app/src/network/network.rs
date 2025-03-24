@@ -5,6 +5,7 @@ use core::{
     ptr::{self},
 };
 
+use defmt::println;
 use minimq::embedded_nal::{TcpClientStack, TcpError};
 use netx_sys::*;
 use static_cell::StaticCell;
@@ -35,7 +36,7 @@ const NETX_PACKET_SIZE: UINT = size_of::<NX_PACKET>() as UINT;
 const NETX_RX_POOL_SIZE: UINT = (WICED_LINK_MTU + NETX_PACKET_SIZE) * NETX_RX_PACKET_COUNT;
 const NETX_TX_POOL_SIZE: UINT = (WICED_LINK_MTU + NETX_PACKET_SIZE) * NETX_TX_PACKET_COUNT;
 
-const NETX_IP_STACK_SIZE: u32 = 4096;
+const NETX_IP_STACK_SIZE: u32 = 2048;
 const NETX_ARP_CACHE_SIZE: UINT = 512;
 
 static TX_PACKET_POOL_MEM: StaticCell<[u8; NETX_TX_POOL_SIZE as usize]> = StaticCell::new();
@@ -120,7 +121,7 @@ impl ThreadxTcpWifiNetwork {
             name,
             WICED_LINK_MTU,
             pool_mem_ptr as *mut core::ffi::c_void,
-            NETX_TX_POOL_SIZE as u32
+            NETX_TX_POOL_SIZE
         ))?;
 
         name = c"RX 0".as_ptr() as *mut core::ffi::c_char;
@@ -132,7 +133,7 @@ impl ThreadxTcpWifiNetwork {
             name,
             WICED_LINK_MTU,
             pool_mem_ptr as *mut core::ffi::c_void,
-            NETX_RX_POOL_SIZE as u32
+            NETX_RX_POOL_SIZE
         ))?;
 
         let pool_ptr = &raw mut POOL;
@@ -186,13 +187,15 @@ impl ThreadxTcpWifiNetwork {
 
         let hostname = c"myBoard0".as_ptr() as *mut core::ffi::c_char;
         let dhcp_client_ptr = DHCP_CLIENT.uninit();
-
+        println!("Starting dhcp");
         nx_checked_call!(_nx_dhcp_create(
             dhcp_client_ptr.as_mut_ptr(),
             ip_ptr.as_mut_ptr(),
             hostname
         ))?;
 
+
+        println!("Starting WiFi join");
         nx_checked_call!(_nx_dhcp_start(dhcp_client_ptr.as_mut_ptr()))?;
         let ssid_b = ssid_str.as_bytes();
         if ssid_b.len() > 32 {
@@ -313,9 +316,9 @@ impl TcpClientStack for ThreadxTcpWifiNetwork {
                 Ok(())
             }
             core::net::SocketAddr::V6(_socket_addr_v6) => {
-                return Err(embedded_nal::nb::Error::Other(
+                Err(embedded_nal::nb::Error::Other(
                     NetxTcpError::UnsupportedProtocol,
-                ));
+                ))
             }
         }
     }
@@ -381,11 +384,11 @@ impl TcpClientStack for ThreadxTcpWifiNetwork {
             // NetXDuo wants us to release if NX_SUCCESS was returned upon receive
             nx_checked_call!(_nx_packet_release(packet_ptr))?;
             if res == NX_SUCCESS {
-                return Ok(bytes_copied as usize);
+                Ok(bytes_copied as usize)
             } else {
-                return Err(embedded_nal::nb::Error::Other(NetxTcpError::from(
+                Err(embedded_nal::nb::Error::Other(NetxTcpError::from(
                     NxError::from_u32(res),
-                )));
+                )))
             }
         } else if res == NX_NO_PACKET {
             return Err(embedded_nal::nb::Error::WouldBlock);

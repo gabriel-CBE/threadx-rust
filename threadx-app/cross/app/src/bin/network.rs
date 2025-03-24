@@ -55,13 +55,11 @@ pub type UINT = ::core::ffi::c_uint;
 pub enum Event {
     TemperatureMeasurement(i32),
 }
-impl Into<Vec<u8>> for Event {
-    fn into(self) -> Vec<u8> {
+impl From<Event> for Vec<u8> {
+    fn from(val: Event) -> Self {
         let mut str = String::<4>::new();
 
-        let measure = match self {
-            Event::TemperatureMeasurement(m) => m,
-        };
+        let Event::TemperatureMeasurement(measure) = val;
         let _ = write!(str, "{measure}");
         str.as_bytes().to_vec()
     }
@@ -76,13 +74,13 @@ pub enum FlagEvents {
 static GLOBAL: ThreadXAllocator = ThreadXAllocator::new();
 
 // Used for Rust heap allocation via global allocator
-static HEAP: StaticCell<[u8; 1024]> = StaticCell::new();
+static HEAP: StaticCell<[u8; 512]> = StaticCell::new();
 
 // Wifi thread globals
 static WIFI_THREAD_STACK: StaticCell<[u8; 4096]> = StaticCell::new();
 static WIFI_THREAD: StaticCell<Thread> = StaticCell::new();
 
-static MEASURE_THREAD_STACK: StaticCell<[u8; 1024]> = StaticCell::new();
+static MEASURE_THREAD_STACK: StaticCell<[u8; 512]> = StaticCell::new();
 static MEASURE_THREAD: StaticCell<Thread> = StaticCell::new();
 
 static BOARD: cortex_m::interrupt::Mutex<RefCell<Option<BoardMxAz3166<I2CBus>>>> =
@@ -105,7 +103,7 @@ fn main() -> ! {
             defmt::println!("Define application. Memory starts at: {} ", mem_start);
 
             // Initialize global heap
-            let heap = Aligned([0; 1024]);
+            let heap = Aligned([0; 512]);
             let heap_mem = HEAP.init_with(|| heap.0);
 
             GLOBAL.initialize(heap_mem).unwrap();
@@ -116,7 +114,7 @@ fn main() -> ! {
             let mut pinned_display = core::pin::Pin::static_mut(display_ref);
             let mut pinned_display_ref = pinned_display.as_mut();
             // Initialize the mutex
-            let _ = pinned_display_ref
+            pinned_display_ref
                 .as_mut()
                 .initialize(c"display_mtx", false)
                 .unwrap();
@@ -163,7 +161,7 @@ fn main() -> ! {
                 .unwrap();
             println!("WLAN thread started");
 
-            let measure_thread_stack = MEASURE_THREAD_STACK.init_with(|| [0u8; 1024]);
+            let measure_thread_stack = MEASURE_THREAD_STACK.init_with(|| [0u8; 512]);
             let measure_thread: &'static mut Thread = MEASURE_THREAD.init(Thread::new());
 
             let _ = measure_thread
@@ -235,7 +233,7 @@ fn start_clock() -> impl Clock {
     static CLOCK_TIMER: StaticCell<Timer> = StaticCell::new();
     let clock_timer = CLOCK_TIMER.init(Timer::new());
 
-    let _ = clock_timer
+    clock_timer
         .initialize_with_fn(
             c"clock_timer_mqtt",
             Some(clock_tick),
@@ -264,7 +262,7 @@ fn print_text(text: &str, display: &mut DisplayType<I2CBus>) {
 pub fn do_network(
     recv: QueueReceiver<Event>,
     evt_handle: EventFlagsGroupHandle,
-    display: & Mutex<Option<DisplayType<I2CBus>>>,
+    display: &Mutex<Option<DisplayType<I2CBus>>>,
 ) -> ! {
     defmt::println!("Initializing Network");
     // Initialize the globlal async executor
@@ -289,7 +287,7 @@ pub fn do_network(
     let clock = start_clock();
     let mut transport = MiniMqBasedTransport::new(Minimq::new(network, clock, mqtt_cfg));
     // Signal that measurements can begin
-    let _res = evt_handle
+    evt_handle
         .publish(FlagEvents::WifiConnected as u32)
         .unwrap();
 
@@ -310,6 +308,6 @@ pub fn do_network(
             print_text("WLAN(x)\nMQTT()", &mut display);
         }
         // Poll every 1000ms
-        let _ = thread::sleep(Duration::from_millis(1000)).unwrap();
+        thread::sleep(Duration::from_millis(1000)).unwrap();
     }
 }

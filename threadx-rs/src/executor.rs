@@ -28,7 +28,6 @@ DEALINGS IN THE SOFTWARE.
 
 use core::{
     future::{Future, IntoFuture},
-    mem::MaybeUninit,
     sync::atomic::AtomicBool,
     task::{Context, Poll, Waker},
 };
@@ -36,7 +35,6 @@ use core::{
 use crate::{event_flags::EventFlagsGroup, mutex::Mutex, WaitOption::WaitForever};
 use defmt::println;
 use static_cell::StaticCell;
-use threadx_sys::TX_MUTEX_STRUCT;
 
 use crate::event_flags::EventFlagsGroupHandle;
 extern crate alloc;
@@ -54,7 +52,6 @@ enum SignalState {
 }
 
 static EXECUTOR_EVENT: StaticCell<EventFlagsGroup> = StaticCell::new();
-static mut MUTEX_S: TX_MUTEX_STRUCT = unsafe { MaybeUninit::zeroed().assume_init() };
 
 static SIGNALS: StaticCell<Mutex<[SignalState; 31]>> = StaticCell::new();
 

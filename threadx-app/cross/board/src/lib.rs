@@ -191,7 +191,7 @@ enum ButtonState {
 
 impl<const P: char, const N: u8> InputButton<P, N> {
     pub fn new(pin: Pin<P, N, Input>) -> Self {
-        InputButton { pin: pin }
+        InputButton { pin }
     }
 
     fn is_high(&self) -> bool {
@@ -218,7 +218,7 @@ struct InputButtonFuture<'a, const P: char, const N: u8> {
 impl<'a, const P: char, const N: u8> InputButtonFuture<'a, P, N> {
     fn new(pin: &'a InputButton<P, N>, expected_state: ButtonState) -> Self {
         InputButtonFuture {
-            pin: pin,
+            pin,
             expected_button_state: expected_state,
         }
     }
@@ -249,7 +249,7 @@ impl<const P: char, const N: u8> Future for InputButtonFuture<'_, P, N> {
                 }
             }
         };
-        return core::task::Poll::Pending;
+        core::task::Poll::Pending
     }
 }
 
@@ -263,12 +263,12 @@ pub enum BUTTONS {
 fn EXTI4() {
     cortex_m::interrupt::free(|cs| {
         if let Some(wker) = BTN_WKER.borrow(cs).borrow_mut().as_ref() {
-            wker.wake_by_ref();
+           wker.wake_by_ref();
         }
+        unsafe {
+            (*EXTI::ptr())
+                .pr()
+                .write(|w| w.bits(1 << BUTTONS::ButtonA as u32))
+        };
     });
-    unsafe {
-        (*EXTI::ptr())
-            .pr()
-            .write(|w| w.bits(1 << BUTTONS::ButtonA as u32))
-    };
 }
