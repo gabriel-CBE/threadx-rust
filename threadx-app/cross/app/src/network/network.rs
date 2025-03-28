@@ -114,26 +114,34 @@ impl ThreadxTcpWifiNetwork {
 
         let mut name = c"TX 0".as_ptr() as *mut core::ffi::c_char;
 
-        let pool_mem_ptr = TX_PACKET_POOL_MEM.uninit().as_mut_ptr();
-
+        let pool_mem_ptr = TX_PACKET_POOL_MEM.uninit().as_mut_ptr() as *mut u8;
+        let offset = pool_mem_ptr.align_offset(align_of::<u32>());
+        unsafe {
+            println!(
+                "Pointer addr {} offset {} offseted {} ",
+                pool_mem_ptr,
+                offset,
+                pool_mem_ptr.add(offset)
+            );
+        };
         nx_checked_call!(_nx_packet_pool_create(
             POOL[TX_IDX].as_mut_ptr(),
             name,
             WICED_LINK_MTU,
-            pool_mem_ptr as *mut core::ffi::c_void,
-            NETX_TX_POOL_SIZE
+            pool_mem_ptr.add(offset) as *mut core::ffi::c_void,
+            NETX_TX_POOL_SIZE - offset as UINT
         ))?;
 
         name = c"RX 0".as_ptr() as *mut core::ffi::c_char;
 
-        let pool_mem_ptr = RX_PACKET_POOL_MEM.uninit().as_mut_ptr();
-
+        let pool_mem_ptr = RX_PACKET_POOL_MEM.uninit().as_mut_ptr() as *mut u8;
+        let offset = pool_mem_ptr.align_offset(align_of::<u32>()) ;
         nx_checked_call!(_nx_packet_pool_create(
             POOL[RX_IDX].as_mut_ptr(),
             name,
             WICED_LINK_MTU,
-            pool_mem_ptr as *mut core::ffi::c_void,
-            NETX_RX_POOL_SIZE
+            pool_mem_ptr.add(offset) as *mut core::ffi::c_void,
+            NETX_RX_POOL_SIZE - offset as UINT
         ))?;
 
         let pool_ptr = &raw mut POOL;
@@ -152,7 +160,8 @@ impl ThreadxTcpWifiNetwork {
 
         name = c"NetX IP Instance 0".as_ptr() as *mut core::ffi::c_char;
 
-        let netx_ip_mem_ptr = NETX_IP_STACK.uninit().as_mut_ptr();
+        let netx_ip_mem_ptr = NETX_IP_STACK.uninit().as_mut_ptr() as *mut u8;
+        let alingment = netx_ip_mem_ptr.align_offset(align_of::<u32>());
         let ip_ptr = IP_PTR.uninit();
         nx_checked_call!(_nx_ip_create(
             ip_ptr.as_mut_ptr(),
@@ -161,15 +170,15 @@ impl ThreadxTcpWifiNetwork {
             Ipv4Addr::new(255, 255, 255, 0).to_bits(),
             POOL[TX_IDX].as_mut_ptr(),
             Some(wiced_sta_netx_duo_driver_entry),
-            netx_ip_mem_ptr as *mut core::ffi::c_void,
-            NETX_IP_STACK_SIZE,
+            netx_ip_mem_ptr.add(alingment) as *mut core::ffi::c_void,
+            NETX_IP_STACK_SIZE - alingment as UINT,
             1
         ))?;
 
         /*
          * ARP Cache area needs some realignment to 4bytes
          */
-        let arp_mem_ptr = NETX_ARP_CACHE_AREA.uninit().as_mut_ptr();
+        let arp_mem_ptr = NETX_ARP_CACHE_AREA.uninit().as_mut_ptr() as *mut u8;
         let offset = arp_mem_ptr.align_offset(align_of::<u32>());
         let aligned_ptr = unsafe { arp_mem_ptr.add(offset) };
 
@@ -193,7 +202,6 @@ impl ThreadxTcpWifiNetwork {
             ip_ptr.as_mut_ptr(),
             hostname
         ))?;
-
 
         println!("Starting WiFi join");
         nx_checked_call!(_nx_dhcp_start(dhcp_client_ptr.as_mut_ptr()))?;
@@ -315,11 +323,9 @@ impl TcpClientStack for ThreadxTcpWifiNetwork {
 
                 Ok(())
             }
-            core::net::SocketAddr::V6(_socket_addr_v6) => {
-                Err(embedded_nal::nb::Error::Other(
-                    NetxTcpError::UnsupportedProtocol,
-                ))
-            }
+            core::net::SocketAddr::V6(_socket_addr_v6) => Err(embedded_nal::nb::Error::Other(
+                NetxTcpError::UnsupportedProtocol,
+            )),
         }
     }
 
@@ -367,7 +373,7 @@ impl TcpClientStack for ThreadxTcpWifiNetwork {
         buffer: &mut [u8],
     ) -> embedded_nal::nb::Result<usize, Self::Error> {
         let mut packet_ptr: *mut NX_PACKET = ptr::null_mut();
-        let packet_ptr_ptr = ptr::addr_of_mut!(packet_ptr);
+        let packet_ptr_ptr = &raw mut packet_ptr;
 
         let res = unsafe { _nx_tcp_socket_receive(socket.socket_ptr, packet_ptr_ptr, NX_NO_WAIT) };
 

@@ -1,6 +1,9 @@
 #![no_main]
 #![no_std]
 
+use core::fmt;
+
+use cortex_m_rt::ExceptionFrame;
 use cortex_m_semihosting::debug;
 
 use defmt_rtt as _; // global logger
@@ -38,9 +41,12 @@ pub fn exit() -> ! {
 /// Terminates the application and makes a semihosting-capable debug tool exit
 /// with an error. This seems better than the default, which is to spin in a
 /// loop.
+///
+
 #[cortex_m_rt::exception]
 unsafe fn HardFault(_frame: &cortex_m_rt::ExceptionFrame) -> ! {
-    defmt::println!("Exception at {}", _frame.pc());
+    
+    defmt::println!("Exception PC {}, r0 {}", _frame.pc(), _frame.r0());
     loop {
         debug::exit(debug::EXIT_FAILURE);
     }

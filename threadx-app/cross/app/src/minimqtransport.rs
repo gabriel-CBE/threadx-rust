@@ -86,7 +86,7 @@ where
             ),
         ];
 
-        let _ = self
+        self
             .mqtt_client
             .client()
             .publish(

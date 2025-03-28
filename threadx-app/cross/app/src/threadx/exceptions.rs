@@ -18,8 +18,8 @@ unsafe fn DefaultHandler(irqn: i16) {
         sdio_irq_handler();
     } else if irqn == 59 {
         dmi2str3_handler();
-    } else {
+    } /*else {
         defmt::println!("Got interrupt {}", irqn);
-    }
+    }*/
     
 }

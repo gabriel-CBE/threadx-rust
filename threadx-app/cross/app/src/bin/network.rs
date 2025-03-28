@@ -100,7 +100,12 @@ fn main() -> ! {
             interrupt::free(|cs| BOARD.borrow(cs).borrow_mut().replace(board));
         },
         |mem_start| {
-            defmt::println!("Define application. Memory starts at: {} ", mem_start);
+            let stack_start = 0x20020000;
+            defmt::println!(
+                "Define application. Memory starts at: {} free stack space {} byte",
+                mem_start,
+                stack_start - (mem_start as usize)
+            );
 
             // Initialize global heap
             let heap = Aligned([0; 512]);
@@ -146,7 +151,8 @@ fn main() -> ! {
             let evt_handle = event_group.initialize(c"event_flag").unwrap();
 
             // Static Cell since we need an allocated but uninitialized block of memory
-            let wifi_thread_stack = WIFI_THREAD_STACK.init_with(|| [0u8; 4096]);
+            let wifi_thread_stack: &'static mut [u8; 4096] =
+                unsafe { WIFI_THREAD_STACK.uninit().assume_init_mut() };
             let wifi_thread: &'static mut Thread = WIFI_THREAD.init(Thread::new());
 
             let _ = wifi_thread
@@ -275,8 +281,8 @@ pub fn do_network(
         panic!();
     }
     let network = network.unwrap();
-    defmt::println!("Network initialized");
-    let remote_addr = SocketAddr::new(core::net::IpAddr::V4(Ipv4Addr::new(192, 168, 2, 100)), 1883);
+    defmt::println!("Network initialized"); // 192.168.1.47
+    let remote_addr = SocketAddr::new(core::net::IpAddr::V4(Ipv4Addr::new(192, 168, 1, 47)), 1883);
     let mut buffer = [0u8; 512];
     let mqtt_cfg = ConfigBuilder::new(IpBroker::new(remote_addr.ip()), &mut buffer)
         .keepalive_interval(60)

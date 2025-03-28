@@ -70,8 +70,8 @@ impl Signal {
     ) -> Self {
         Self {
             state_index: index,
-            event_flag_handle: event_flag_handle,
-            signal_mtx: signal_mtx,
+            event_flag_handle,
+            signal_mtx,
         }
     }
 
