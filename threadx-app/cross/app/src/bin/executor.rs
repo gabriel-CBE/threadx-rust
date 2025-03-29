@@ -11,7 +11,6 @@ use alloc::string::ToString;
 use board::{BoardMxAz3166, I2CBus, LowLevelInit};
 
 use cortex_m::interrupt::Mutex;
-use cortex_m::itm::Aligned;
 use defmt::println;
 use embedded_graphics::mono_font::ascii::FONT_9X18;
 use embedded_graphics::prelude::Point;
@@ -77,8 +76,7 @@ fn main() -> ! {
             let measure_thread_stack = MEASURE_THREAD_STACK.init_with(|| [0u8; 512]);
             let switcher_thread_stack = SWITCHER_THREAD_STACK.init_with(|| [0u8; 512]);
 
-            let heap: Aligned<[u8; 1024]> = Aligned([0; 1024]);
-            let heap_mem = HEAP.init_with(|| heap.0);
+            let heap_mem = HEAP.init_with(|| [0u8; 1024]);
             GLOBAL.initialize(heap_mem).unwrap();
             let executor = Executor::new();
 
@@ -153,7 +151,7 @@ fn main() -> ! {
                                 / 8.0)
                                 .to_string();
                             text.push_str(&temp);
-                            text.push_str("C");
+                            text.push('C');
 
                             Text::with_baseline(&text, Point::zero(), text_style, Baseline::Top)
                                 .draw(&mut display)

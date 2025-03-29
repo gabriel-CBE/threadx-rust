@@ -11,7 +11,6 @@ use alloc::vec::Vec;
 use board::{hts221, BoardMxAz3166, DisplayType, I2CBus, LowLevelInit};
 
 use cortex_m::interrupt;
-use cortex_m::itm::Aligned;
 use defmt::println;
 use embedded_graphics::mono_font::ascii::FONT_9X18;
 use heapless::String;
@@ -107,9 +106,7 @@ fn main() -> ! {
                 stack_start - (mem_start as usize)
             );
 
-            // Initialize global heap
-            let heap = Aligned([0; 512]);
-            let heap_mem = HEAP.init_with(|| heap.0);
+            let heap_mem = HEAP.init_with(|| [0u8; 512]);
 
             GLOBAL.initialize(heap_mem).unwrap();
 

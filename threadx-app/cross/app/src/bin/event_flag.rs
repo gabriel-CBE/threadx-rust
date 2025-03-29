@@ -1,11 +1,9 @@
 #![no_main]
 #![no_std]
 
-
 use alloc::boxed::Box;
 use board::{BoardMxAz3166, LowLevelInit};
 
-use cortex_m::itm::Aligned;
 use defmt::println;
 use static_cell::StaticCell;
 use threadx_rs::allocator::ThreadXAllocator;
@@ -46,30 +44,25 @@ fn main() -> ! {
             defmt::println!("Define application. Memory starts at: {} ", mem_start);
 
             let bp = BP.init(BytePool::new());
-            
+
             // Inefficient, creates array on the stack first.
             let mem_tmp = [0u8; 1024];
             let bp_mem = BP_MEM.init(mem_tmp);
-            let bp = bp
-                .initialize(c"pool1", bp_mem)
-                .unwrap();
+            let bp = bp.initialize(c"pool1", bp_mem).unwrap();
             //allocate memory for the two tasks.
             let task1_mem = bp.allocate(256, true).unwrap();
             let task2_mem = bp.allocate(256, true).unwrap();
             let task3_mem = bp.allocate(256, true).unwrap();
 
             //TODO: This is too short lived ... types are not correct
-            let heap = Aligned([0; 1024]);
-            let heap_mem = HEAP.init_with(||heap.0);
+            let heap_mem = HEAP.init_with(|| [0u8; 1024]);
 
             GLOBAL.initialize(heap_mem).unwrap();
 
             // create events flag group
             let event_group = EVENT_GROUP.init(EventFlagsGroup::new());
 
-            let evt_handle = event_group
-                .initialize(c"event_flag")
-                .unwrap();
+            let evt_handle = event_group.initialize(c"event_flag").unwrap();
 
             // Create timer
             let timer = TIMER.init(Timer::new());

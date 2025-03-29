@@ -185,7 +185,7 @@ impl ThreadxTcpWifiNetwork {
         nx_checked_call!(_nx_arp_enable(
             ip_ptr.as_mut_ptr(),
             aligned_ptr as *mut c_void,
-            NETX_ARP_CACHE_SIZE - offset as UINT
+            NETX_ARP_CACHE_SIZE  as UINT
         ))?;
 
         nx_checked_call!(_nx_tcp_enable(ip_ptr.as_mut_ptr()))?;
