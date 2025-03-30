@@ -5,6 +5,7 @@ use core::{
     ptr::{self},
 };
 
+use cortex_m::itm::Aligned;
 use defmt::println;
 use minimq::embedded_nal::{TcpClientStack, TcpError};
 use netx_sys::*;
@@ -39,10 +40,13 @@ const NETX_TX_POOL_SIZE: UINT = (WICED_LINK_MTU + NETX_PACKET_SIZE) * NETX_TX_PA
 const NETX_IP_STACK_SIZE: u32 = 2048;
 const NETX_ARP_CACHE_SIZE: UINT = 512;
 
-static TX_PACKET_POOL_MEM: StaticCell<[u8; NETX_TX_POOL_SIZE as usize]> = StaticCell::new();
-static RX_PACKET_POOL_MEM: StaticCell<[u8; NETX_RX_POOL_SIZE as usize]> = StaticCell::new();
-static NETX_IP_STACK: StaticCell<[u8; NETX_IP_STACK_SIZE as usize]> = StaticCell::new();
-static NETX_ARP_CACHE_AREA: StaticCell<[u8; NETX_ARP_CACHE_SIZE as usize]> = StaticCell::new();
+static TX_PACKET_POOL_MEM: StaticCell<Aligned<[u8; NETX_TX_POOL_SIZE as usize]>> =
+    StaticCell::new();
+static RX_PACKET_POOL_MEM: StaticCell<Aligned<[u8; NETX_RX_POOL_SIZE as usize]>> =
+    StaticCell::new();
+static NETX_IP_STACK: StaticCell<Aligned<[u8; NETX_IP_STACK_SIZE as usize]>> = StaticCell::new();
+static NETX_ARP_CACHE_AREA: StaticCell<Aligned<[u8; NETX_ARP_CACHE_SIZE as usize]>> =
+    StaticCell::new();
 
 static DHCP_CLIENT: StaticCell<NX_DHCP> = StaticCell::new();
 static SOCKET_PTR: StaticCell<NX_TCP_SOCKET> = StaticCell::new();
@@ -114,34 +118,31 @@ impl ThreadxTcpWifiNetwork {
 
         let mut name = c"TX 0".as_ptr() as *mut core::ffi::c_char;
 
-        let pool_mem_ptr = TX_PACKET_POOL_MEM.uninit().as_mut_ptr() as *mut u8;
-        let offset = pool_mem_ptr.align_offset(align_of::<u32>());
-        unsafe {
-            println!(
-                "Pointer addr {} offset {} offseted {} ",
-                pool_mem_ptr,
-                offset,
-                pool_mem_ptr.add(offset)
-            );
-        };
+        let pool_mem_ptr = TX_PACKET_POOL_MEM
+            .init_with(|| Aligned([0u8; NETX_TX_POOL_SIZE as usize]))
+            .0
+            .as_mut_ptr();
         nx_checked_call!(_nx_packet_pool_create(
             POOL[TX_IDX].as_mut_ptr(),
             name,
             WICED_LINK_MTU,
-            pool_mem_ptr.add(offset) as *mut core::ffi::c_void,
-            NETX_TX_POOL_SIZE - offset as UINT
+            pool_mem_ptr as *mut core::ffi::c_void,
+            NETX_TX_POOL_SIZE as UINT
         ))?;
 
         name = c"RX 0".as_ptr() as *mut core::ffi::c_char;
 
-        let pool_mem_ptr = RX_PACKET_POOL_MEM.uninit().as_mut_ptr() as *mut u8;
-        let offset = pool_mem_ptr.align_offset(align_of::<u32>()) ;
+        let pool_mem_ptr = RX_PACKET_POOL_MEM
+            .init_with(|| Aligned([0u8; NETX_RX_POOL_SIZE as usize]))
+            .0
+            .as_mut_ptr();
+
         nx_checked_call!(_nx_packet_pool_create(
             POOL[RX_IDX].as_mut_ptr(),
             name,
             WICED_LINK_MTU,
-            pool_mem_ptr.add(offset) as *mut core::ffi::c_void,
-            NETX_RX_POOL_SIZE - offset as UINT
+            pool_mem_ptr as *mut core::ffi::c_void,
+            NETX_RX_POOL_SIZE as UINT
         ))?;
 
         let pool_ptr = &raw mut POOL;
@@ -160,8 +161,10 @@ impl ThreadxTcpWifiNetwork {
 
         name = c"NetX IP Instance 0".as_ptr() as *mut core::ffi::c_char;
 
-        let netx_ip_mem_ptr = NETX_IP_STACK.uninit().as_mut_ptr() as *mut u8;
-        let alingment = netx_ip_mem_ptr.align_offset(align_of::<u32>());
+        let netx_ip_mem_ptr = NETX_IP_STACK
+            .init_with(|| Aligned([0u8; NETX_IP_STACK_SIZE as usize]))
+            .0
+            .as_mut_ptr();
         let ip_ptr = IP_PTR.uninit();
         nx_checked_call!(_nx_ip_create(
             ip_ptr.as_mut_ptr(),
@@ -170,22 +173,20 @@ impl ThreadxTcpWifiNetwork {
             Ipv4Addr::new(255, 255, 255, 0).to_bits(),
             POOL[TX_IDX].as_mut_ptr(),
             Some(wiced_sta_netx_duo_driver_entry),
-            netx_ip_mem_ptr.add(alingment) as *mut core::ffi::c_void,
-            NETX_IP_STACK_SIZE - alingment as UINT,
+            netx_ip_mem_ptr as *mut core::ffi::c_void,
+            NETX_IP_STACK_SIZE as UINT,
             1
         ))?;
 
         /*
          * ARP Cache area needs some realignment to 4bytes
          */
-        let arp_mem_ptr = NETX_ARP_CACHE_AREA.uninit().as_mut_ptr() as *mut u8;
-        let offset = arp_mem_ptr.align_offset(align_of::<u32>());
-        let aligned_ptr = unsafe { arp_mem_ptr.add(offset) };
+        let arp_mem_ptr = NETX_ARP_CACHE_AREA.init_with(|| Aligned([0u8; 512]));
 
         nx_checked_call!(_nx_arp_enable(
             ip_ptr.as_mut_ptr(),
-            aligned_ptr as *mut c_void,
-            NETX_ARP_CACHE_SIZE  as UINT
+            arp_mem_ptr.0.as_mut_ptr() as *mut c_void,
+            NETX_ARP_CACHE_SIZE as UINT
         ))?;
 
         nx_checked_call!(_nx_tcp_enable(ip_ptr.as_mut_ptr()))?;
