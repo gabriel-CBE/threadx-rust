@@ -65,6 +65,7 @@ static mut POOL: [MaybeUninit<NX_PACKET_POOL>; 2] = [
 pub struct ThreadxTcpWifiNetwork {
     socket: Option<NetxTcpSocket>,
     recv_buffer: ConstGenericRingBuffer<u8, 512>,
+    recv_int_buf: [u8; 512],
 }
 
 pub struct NetxTcpSocket {
@@ -259,6 +260,7 @@ impl ThreadxTcpWifiNetwork {
                 socket_ptr: Self::create_socket(ip_ptr.as_mut_ptr()).unwrap(),
             }),
             recv_buffer: ConstGenericRingBuffer::<u8, 512>::new(),
+            recv_int_buf: [0u8; 512],
         };
 
         Ok(network)
@@ -385,7 +387,6 @@ impl TcpClientStack for ThreadxTcpWifiNetwork {
         socket: &mut Self::TcpSocket,
         buffer: &mut [u8],
     ) -> embedded_nal::nb::Result<usize, Self::Error> {
-        let mut local_buffer = [0u8; 512];
         // Check if there is still data in the receive buffer
         if !self.recv_buffer.is_empty() {
             return Ok(drain_to_buffer(buffer, &mut self.recv_buffer));
@@ -399,22 +400,22 @@ impl TcpClientStack for ThreadxTcpWifiNetwork {
             // Safety: We successfully received a packet so packet_ptr points to this.
             let packet = unsafe { *packet_ptr };
             // Check if the packet fits into the user supplied buffer
-            if packet.nx_packet_length > local_buffer.len().try_into().unwrap() {
+            if packet.nx_packet_length > self.recv_int_buf.len().try_into().unwrap() {
                 panic!("Intermediate buffer too small");
             }
 
             let res = unsafe {
                 _nx_packet_data_retrieve(
                     packet_ptr,
-                    local_buffer.as_mut_ptr() as *mut c_void,
+                    self.recv_int_buf.as_mut_ptr() as *mut c_void,
                     &mut bytes_copied as *mut ULONG,
                 )
             };
             // If possible copy directly to the user buffer
             if buffer.len() >= bytes_copied.try_into().unwrap() {
-                buffer.copy_from_slice(&local_buffer[0..bytes_copied as usize]);
+                buffer.copy_from_slice(&self.recv_int_buf[0..bytes_copied as usize]);
             } else {
-                for val in local_buffer.iter().take(bytes_copied as usize) {
+                for val in self.recv_int_buf.iter().take(bytes_copied as usize) {
                     self.recv_buffer.push(*val);
                 }
             }
