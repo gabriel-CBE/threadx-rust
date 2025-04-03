@@ -107,6 +107,9 @@ fn main() -> ! {
                 stack_start - (mem_start as usize)
             );
 
+            #[cfg(feature = "mqtt_logging")]
+            log_to_defmt::setup();
+
             let heap_mem = HEAP.init_with(|| [0u8; 512]);
 
             GLOBAL.initialize(heap_mem).unwrap();

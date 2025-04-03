@@ -286,16 +286,13 @@ impl ThreadxTcpWifiNetwork {
     }
 }
 
-// TODO: Current implementation is not correct since it is expected to only read up to
-// buffer.len() bytes. We currently read in one go which does not work when the buffer is
-// incrementally increased.
 fn drain_to_buffer(buffer: &mut [u8], ringbuffer: &mut ConstGenericRingBuffer<u8, 512>) -> usize {
     let buffer_len = buffer.len();
     let drain_to = buffer_len.min(ringbuffer.len());
     for v in ringbuffer.drain().take(drain_to).zip(0..drain_to) {
         buffer[v.1] = v.0
     }
-    drain_to 
+    drain_to
 }
 
 impl TcpClientStack for ThreadxTcpWifiNetwork {
@@ -304,6 +301,7 @@ impl TcpClientStack for ThreadxTcpWifiNetwork {
     type Error = NetxTcpError;
 
     fn socket(&mut self) -> Result<Self::TcpSocket, Self::Error> {
+        defmt::info!("Getting the socket");
         let socket = self.socket.take();
         if let Some(sock) = socket {
             Ok(sock)
@@ -381,7 +379,6 @@ impl TcpClientStack for ThreadxTcpWifiNetwork {
         Ok(buffer.len())
     }
 
-
     fn receive(
         &mut self,
         socket: &mut Self::TcpSocket,
@@ -440,13 +437,21 @@ impl TcpClientStack for ThreadxTcpWifiNetwork {
     }
 
     fn close(&mut self, socket: Self::TcpSocket) -> Result<(), Self::Error> {
-        nx_checked_call!(_nx_tcp_socket_disconnect(
-            socket.socket_ptr,
-            NX_WAIT_FOREVER
-        ))?;
+        defmt::info!("Closing socket");
+        // Safety: Disconnecting the socket is a safe operation.
+        let disconnect_res =
+            unsafe { _nx_tcp_socket_disconnect(socket.socket_ptr, NX_WAIT_FOREVER) };
+        // If the socket is already disconnected we can move on.
+        if disconnect_res != NX_SUCCESS && disconnect_res != NX_NOT_CONNECTED {
+            // TODO: Getting here will leave a None self.socket ie. the network stack is dead.
+            error!("Socket disconnect failed with reason: {}. Panicking since we cannot recover", disconnect_res);
+            panic!("Socket disconnect failed unexpectedly");
+        }
 
+        defmt::info!("Unbinding socket");
         nx_checked_call!(_nx_tcp_client_socket_unbind(socket.socket_ptr))?;
-        // Put socket back for reuse
+        // Put socket back for reusee
+        defmt::info!("Reuusing the socket");
         self.socket = Some(NetxTcpSocket {
             socket_ptr: socket.socket_ptr,
         });

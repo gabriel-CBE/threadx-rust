@@ -38,8 +38,8 @@ impl<'buf, TcpStack: TcpClientStack, Clock: embedded_time::Clock, Broker: minimq
             .poll(|_client, _topic, _payload, _properties| 1)
         {
             Ok(_) => (),
-            Err(minimq::Error::Network(_)) => {
-                defmt::println!("Network disconnect, trying to reconnect.")
+            Err(minimq::Error::Network(_e)) => {
+                defmt::warn!("Network disconnect, trying to reconnect.")
             }
             Err(minimq::Error::SessionReset) => {
                 defmt::println!("Session reset.")
