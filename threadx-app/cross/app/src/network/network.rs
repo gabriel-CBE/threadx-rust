@@ -6,9 +6,10 @@ use core::{
 };
 
 use cortex_m::itm::Aligned;
-use defmt::println;
+use defmt::{error, println};
 use minimq::embedded_nal::{TcpClientStack, TcpError};
 use netx_sys::*;
+use ringbuffer::{ConstGenericRingBuffer, RingBuffer};
 use static_cell::StaticCell;
 use threadx_sys::{UINT, ULONG};
 
@@ -63,6 +64,7 @@ static mut POOL: [MaybeUninit<NX_PACKET_POOL>; 2] = [
 
 pub struct ThreadxTcpWifiNetwork {
     socket: Option<NetxTcpSocket>,
+    recv_buffer: ConstGenericRingBuffer<u8, 512>,
 }
 
 pub struct NetxTcpSocket {
@@ -84,7 +86,7 @@ impl TcpError for NetxTcpError {
     fn kind(&self) -> minimq::embedded_nal::TcpErrorKind {
         match self {
             Self::SocketClosed => embedded_nal::TcpErrorKind::PipeClosed,
-            _ => minimq::embedded_nal::TcpErrorKind::Other,
+            _ => embedded_nal::TcpErrorKind::Other,
         }
     }
 }
@@ -256,6 +258,7 @@ impl ThreadxTcpWifiNetwork {
             socket: Some(NetxTcpSocket {
                 socket_ptr: Self::create_socket(ip_ptr.as_mut_ptr()).unwrap(),
             }),
+            recv_buffer: ConstGenericRingBuffer::<u8, 512>::new(),
         };
 
         Ok(network)
@@ -279,6 +282,18 @@ impl ThreadxTcpWifiNetwork {
 
         Ok(socket_ptr.as_mut_ptr())
     }
+}
+
+// TODO: Current implementation is not correct since it is expected to only read up to
+// buffer.len() bytes. We currently read in one go which does not work when the buffer is
+// incrementally increased.
+fn drain_to_buffer(buffer: &mut [u8], ringbuffer: &mut ConstGenericRingBuffer<u8, 512>) -> usize {
+    let buffer_len = buffer.len();
+    let drain_to = buffer_len.min(ringbuffer.len());
+    for v in ringbuffer.drain().take(drain_to).zip(0..drain_to) {
+        buffer[v.1] = v.0
+    }
+    drain_to 
 }
 
 impl TcpClientStack for ThreadxTcpWifiNetwork {
@@ -338,12 +353,6 @@ impl TcpClientStack for ThreadxTcpWifiNetwork {
         let mut packet_ptr: *mut NX_PACKET = ptr::null_mut();
         let packet_ptr_ptr = ptr::addr_of_mut!(packet_ptr);
 
-        if buffer.len() > 255 {
-            return Err(embedded_nal::nb::Error::Other(NetxTcpError::BufferTooSmall));
-        }
-        let mut send_buffer: [u8; 256] = [0u8; 256];
-        send_buffer[0..buffer.len()].copy_from_slice(buffer);
-
         nx_checked_call!(_nx_packet_allocate(
             POOL[TX_IDX].as_mut_ptr(),
             packet_ptr_ptr,
@@ -351,9 +360,11 @@ impl TcpClientStack for ThreadxTcpWifiNetwork {
             NX_WAIT_FOREVER
         ))?;
 
+        // Safety: ThreadX _nx_packet_data_append does not modify buffer internally but we need to
+        // give it a *mut.
         nx_checked_call!(_nx_packet_data_append(
             packet_ptr,
-            send_buffer.as_mut_ptr() as *mut c_void,
+            buffer.as_ptr() as *mut c_void,
             buffer.len() as u32,
             POOL[TX_IDX].as_mut_ptr(),
             NX_WAIT_FOREVER
@@ -368,30 +379,50 @@ impl TcpClientStack for ThreadxTcpWifiNetwork {
         Ok(buffer.len())
     }
 
+
     fn receive(
         &mut self,
         socket: &mut Self::TcpSocket,
         buffer: &mut [u8],
     ) -> embedded_nal::nb::Result<usize, Self::Error> {
+        let mut local_buffer = [0u8; 512];
+        // Check if there is still data in the receive buffer
+        if !self.recv_buffer.is_empty() {
+            return Ok(drain_to_buffer(buffer, &mut self.recv_buffer));
+        }
         let mut packet_ptr: *mut NX_PACKET = ptr::null_mut();
         let packet_ptr_ptr = &raw mut packet_ptr;
 
         let res = unsafe { _nx_tcp_socket_receive(socket.socket_ptr, packet_ptr_ptr, NX_NO_WAIT) };
-
         if res == NX_SUCCESS {
             let mut bytes_copied: ULONG = 0;
+            // Safety: We successfully received a packet so packet_ptr points to this.
+            let packet = unsafe { *packet_ptr };
+            // Check if the packet fits into the user supplied buffer
+            if packet.nx_packet_length > local_buffer.len().try_into().unwrap() {
+                panic!("Intermediate buffer too small");
+            }
+
             let res = unsafe {
                 _nx_packet_data_retrieve(
                     packet_ptr,
-                    buffer.as_mut_ptr() as *mut c_void,
+                    local_buffer.as_mut_ptr() as *mut c_void,
                     &mut bytes_copied as *mut ULONG,
                 )
             };
+            // If possible copy directly to the user buffer
+            if buffer.len() >= bytes_copied.try_into().unwrap() {
+                buffer.copy_from_slice(&local_buffer[0..bytes_copied as usize]);
+            } else {
+                for val in local_buffer.iter().take(bytes_copied as usize) {
+                    self.recv_buffer.push(*val);
+                }
+            }
 
             // NetXDuo wants us to release if NX_SUCCESS was returned upon receive
             nx_checked_call!(_nx_packet_release(packet_ptr))?;
             if res == NX_SUCCESS {
-                Ok(bytes_copied as usize)
+                Ok(drain_to_buffer(buffer, &mut self.recv_buffer))
             } else {
                 Err(embedded_nal::nb::Error::Other(NetxTcpError::from(
                     NxError::from_u32(res),

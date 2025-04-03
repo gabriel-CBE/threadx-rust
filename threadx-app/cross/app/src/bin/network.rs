@@ -15,6 +15,7 @@ use defmt::println;
 use embedded_graphics::mono_font::ascii::FONT_9X18;
 use heapless::String;
 use minimq::broker::IpBroker;
+use minimq::config::BufferConfig;
 use minimq::embedded_time::rate::Fraction;
 use minimq::embedded_time::{self, Clock, Instant};
 use minimq::{ConfigBuilder, Minimq};
@@ -76,7 +77,7 @@ static GLOBAL: ThreadXAllocator = ThreadXAllocator::new();
 static HEAP: StaticCell<[u8; 512]> = StaticCell::new();
 
 // Wifi thread globals
-static WIFI_THREAD_STACK: StaticCell<[u8; 4096]> = StaticCell::new();
+static WIFI_THREAD_STACK: StaticCell<[u8; 8192]> = StaticCell::new();
 static WIFI_THREAD: StaticCell<Thread> = StaticCell::new();
 
 static MEASURE_THREAD_STACK: StaticCell<[u8; 512]> = StaticCell::new();
@@ -148,7 +149,7 @@ fn main() -> ! {
             let evt_handle = event_group.initialize(c"event_flag").unwrap();
 
             // Static Cell since we need an allocated but uninitialized block of memory
-            let wifi_thread_stack: &'static mut [u8; 4096] =
+            let wifi_thread_stack: &'static mut [u8; 8192] =
                 unsafe { WIFI_THREAD_STACK.uninit().assume_init_mut() };
             let wifi_thread: &'static mut Thread = WIFI_THREAD.init(Thread::new());
 
@@ -279,7 +280,7 @@ pub fn do_network(
     }
     let network = network.unwrap();
     defmt::println!("Network initialized"); // 192.168.1.47
-    let remote_addr = SocketAddr::new(core::net::IpAddr::V4(Ipv4Addr::new(192, 168, 1, 47)), 1883);
+    let remote_addr = SocketAddr::new(core::net::IpAddr::V4(Ipv4Addr::new(192, 168, 2, 100)), 1883);
     let mut buffer = [0u8; 512];
     let mqtt_cfg = ConfigBuilder::new(IpBroker::new(remote_addr.ip()), &mut buffer)
         .keepalive_interval(60)

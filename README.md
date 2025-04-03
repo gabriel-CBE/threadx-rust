@@ -35,11 +35,11 @@ Goto `threadx-app/cross/app` and run:
 - No production ready error handling 
 - General structure needs to be improved 
 - Some more abstractions see embassy
-- Simplify build process 
 
 ### embedded-nal
 
 - Only a single socket can be used
+- As for now the implementation is unsound as there are no checks to assure that buffers are big enough to hold incoming packets 
 
 ### Async executor
 
