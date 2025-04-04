@@ -195,7 +195,7 @@ impl Executor {
             unused_index,
             self.signal_mtx,
         ));
-
+    
         // Create a context that will be passed to the future.
         let waker = Waker::from(alloc::sync::Arc::clone(&signal));
         let mut context = Context::from_waker(&waker);

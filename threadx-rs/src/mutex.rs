@@ -86,16 +86,14 @@ impl<T> Mutex<T> {
                 .get_mut()
                 .as_mut_ptr()
         };
-        let res = tx_checked_call!(_tx_mutex_create(
+        tx_checked_call!(_tx_mutex_create(
             mutex_ptr,
             name.as_ptr() as *mut i8,
             inherit as u32
-        ));
-        if res.is_ok() {
-            // Safety: MutexGuard will only dereference to a T. The structure which must not move (TX_MUTEX) will not be moved.
-            unsafe { self.as_mut().get_unchecked_mut().initialized = true };
-        }
-        res
+        ))?;
+        // Safety: MutexGuard will only dereference to a T. The structure which must not move (TX_MUTEX) will not be moved.
+        unsafe { self.as_mut().get_unchecked_mut().initialized = true };
+        Ok(())
     }
 
     // Safety: Since we use only immutable references we do not need to use pin

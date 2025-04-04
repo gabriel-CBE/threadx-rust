@@ -46,27 +46,25 @@ unsafe extern "C" fn thread_box_callback_trampoline(arg: ULONG) {
 }
 
 impl Thread {
+    // Safety: Sincd we can go from 'static mut to a Pinned state via static_mut the control structure
+    // inside the Thread struct will not move. 
     pub fn initialize_with_autostart_box(
         &'static mut self,
-        name: &str,
+        name: &CStr,
         entry_function: alloc::boxed::Box<dyn FnOnce()>,
         stack: &'static mut [u8],
         priority: u32,
         preempt_threshold: u32,
         time_slice: u32,
     ) -> Result<ThreadHandle, TxError> {
-        let expiration_function_ptr =
+        let entry_function_ptr =
             alloc::boxed::Box::into_raw(alloc::boxed::Box::new(entry_function));
         //convert to a ULONG
-        let entry_function_addr = expiration_function_ptr.expose_provenance() as ULONG;
-        // Check that strlen < 31
-        let mut local_name = [0u8; 32];
-        local_name[..name.len()].copy_from_slice(name.as_bytes());
-
+        let entry_function_addr = entry_function_ptr.expose_provenance() as ULONG;
         tx_checked_call!(_tx_thread_create(
-            // TODO: Ensure that threadx api does not modify this
             self.tx_struct.as_mut_ptr(),
-            local_name.as_mut_ptr() as *mut i8,
+            // TODO: Ensure that threadx api does not modify the name.
+            name.as_ptr() as *mut i8,
             Some(thread_box_callback_trampoline),
             entry_function_addr,
             stack.as_mut_ptr() as *mut core::ffi::c_void,

@@ -76,7 +76,7 @@ fn main() -> ! {
             };
 
             let _th_handle = thread
-                .initialize_with_autostart_box("thread1", Box::new(thread1_func), task1_mem.consume(), 1, 1, 0)
+                .initialize_with_autostart_box(c"thread1", Box::new(thread1_func), task1_mem.consume(), 1, 1, 0)
                 .unwrap();
 
             let thread2_fn = move || loop {
@@ -93,7 +93,7 @@ fn main() -> ! {
             let thread2 = THREAD2.init(Thread::new());
 
             let _th2_handle = thread2
-                .initialize_with_autostart_box("thread2", Box::new(thread2_fn), task2_mem.consume(), 1, 1, 0)
+                .initialize_with_autostart_box(c"thread2", Box::new(thread2_fn), task2_mem.consume(), 1, 1, 0)
                 .unwrap();
             println!("Init done.")
         },

@@ -170,7 +170,7 @@ fn main() -> ! {
 
             let _ = display_thread
                 .initialize_with_autostart_box(
-                    "measure_thread",
+                    c"measure_thread",
                     display_task,
                     display_thread_stack,
                     1,
@@ -181,7 +181,7 @@ fn main() -> ! {
 
             let _ = measure_thread
                 .initialize_with_autostart_box(
-                    "measure_thread",
+                    c"measure_thread",
                     measure_task,
                     measure_thread_stack,
                     1,
@@ -192,7 +192,7 @@ fn main() -> ! {
 
             let _ = switcher_thread
                 .initialize_with_autostart_box(
-                    "switcher_thread",
+                    c"switcher_thread",
                     switcher_task,
                     switcher_thread_stack,
                     1,

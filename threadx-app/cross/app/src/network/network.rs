@@ -254,11 +254,9 @@ impl ThreadxTcpWifiNetwork {
             ip_ptr.as_mut_ptr(),
             &mut gateway_address as *mut ULONG
         ))?;
-
+        let socket_ptr = Self::create_socket(ip_ptr.as_mut_ptr())?;
         let network = ThreadxTcpWifiNetwork {
-            socket: Some(NetxTcpSocket {
-                socket_ptr: Self::create_socket(ip_ptr.as_mut_ptr()).unwrap(),
-            }),
+            socket: Some(NetxTcpSocket { socket_ptr }),
             recv_buffer: ConstGenericRingBuffer::<u8, 512>::new(),
             recv_int_buf: [0u8; 512],
         };
@@ -444,7 +442,10 @@ impl TcpClientStack for ThreadxTcpWifiNetwork {
         // If the socket is already disconnected we can move on.
         if disconnect_res != NX_SUCCESS && disconnect_res != NX_NOT_CONNECTED {
             // TODO: Getting here will leave a None self.socket ie. the network stack is dead.
-            error!("Socket disconnect failed with reason: {}. Panicking since we cannot recover", disconnect_res);
+            error!(
+                "Socket disconnect failed with reason: {}. Panicking since we cannot recover",
+                disconnect_res
+            );
             panic!("Socket disconnect failed unexpectedly");
         }
 

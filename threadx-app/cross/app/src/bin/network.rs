@@ -158,7 +158,7 @@ fn main() -> ! {
 
             let _ = wifi_thread
                 .initialize_with_autostart_box(
-                    "wifi_thread",
+                    c"wifi_thread",
                     Box::new(move || do_network(receiver, evt_handle, &pinned_display)),
                     wifi_thread_stack,
                     4,
@@ -173,7 +173,7 @@ fn main() -> ! {
 
             let _ = measure_thread
                 .initialize_with_autostart_box(
-                    "measurement_thread",
+                    c"measurement_thread",
                     Box::new(move || do_measurement(sender, evt_handle, hts211, i2c)),
                     measure_thread_stack,
                     4,

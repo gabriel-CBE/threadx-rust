@@ -98,7 +98,7 @@ fn main() -> ! {
             });
 
             let _ = thread1
-                .initialize_with_autostart_box("thread1", thread_func, task1_mem.consume(), 1, 1, 0)
+                .initialize_with_autostart_box(c"thread1", thread_func, task1_mem.consume(), 1, 1, 0)
                 .unwrap();
 
             let thread2_fn = Box::new(move || {
@@ -121,7 +121,7 @@ fn main() -> ! {
             let thread2 = THREAD2.init(Thread::new());
 
             let _ = thread2
-                .initialize_with_autostart_box("thread2", thread2_fn, task2_mem.consume(), 1, 1, 0)
+                .initialize_with_autostart_box(c"thread2", thread2_fn, task2_mem.consume(), 1, 1, 0)
                 .unwrap();
 
             let thread3_fn = Box::new(move || {
@@ -145,7 +145,7 @@ fn main() -> ! {
             let thread3 = THREAD3.init(Thread::new());
 
             let _ = thread3
-                .initialize_with_autostart_box("thread3", thread3_fn, task3_mem.consume(), 1, 1, 0)
+                .initialize_with_autostart_box(c"thread3", thread3_fn, task3_mem.consume(), 1, 1, 0)
                 .unwrap();
 
             defmt::println!("Done with app init.");
