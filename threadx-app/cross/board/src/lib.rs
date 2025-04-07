@@ -87,13 +87,13 @@ impl LowLevelInit for BoardMxAz3166<I2CBus> {
         unsafe {
             let stack_start = &_stack_start as *const u32 as u32;
             threadx_sys::_tx_thread_system_stack_ptr = stack_start as *mut c_void;
-            defmt::println!(
+            defmt::info!(
                 "Low level init.  Stack at: {=u32:#x} Ticks per second:{}",
                 stack_start,
                 ticks_per_second
             );
 
-            defmt::println!("Stack size {}", stack_start - 0x2000_0000);
+            defmt::info!("Stack size {}", stack_start - 0x2000_0000);
         }
         let p = pac::Peripherals::take().unwrap();
 
@@ -145,7 +145,7 @@ impl LowLevelInit for BoardMxAz3166<I2CBus> {
         let i2c = I2c::new(p.I2C1, (scl, sda), Mode::standard(Hertz::kHz(400)), &clocks);
         cortex_m::interrupt::free(|cs| SHARED_BUS.borrow(cs).replace(Some(i2c)));
         let mut bus = I2CBus { i2c: &SHARED_BUS };
-        defmt::println!("Low level init");
+        defmt::info!("Low level init");
 
         let hts221 = hts221::Builder::new()
             .with_data_rate(hts221::DataRate::Continuous1Hz)
@@ -170,7 +170,7 @@ impl LowLevelInit for BoardMxAz3166<I2CBus> {
                 "STR     r1, [r0, #0xD20]",
             );
         }
-        defmt::println!("Int prio set");
+        defmt::info!("Int prio set");
         Ok(BoardMxAz3166 {
             display: Some(display),
             temp_sensor: Some(hts221),

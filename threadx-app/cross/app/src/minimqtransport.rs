@@ -42,7 +42,7 @@ impl<'buf, TcpStack: TcpClientStack, Clock: embedded_time::Clock, Broker: minimq
                 defmt::warn!("Network disconnect, trying to reconnect.")
             }
             Err(minimq::Error::SessionReset) => {
-                defmt::println!("Session reset.")
+                defmt::info!("Session reset.")
             }
             _ => panic!("Error during poll, giving up."),
         }

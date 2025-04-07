@@ -11,11 +11,9 @@ use alloc::vec::Vec;
 use board::{hts221, BoardMxAz3166, DisplayType, I2CBus, LowLevelInit};
 
 use cortex_m::interrupt;
-use defmt::println;
 use embedded_graphics::mono_font::ascii::FONT_9X18;
 use heapless::String;
 use minimq::broker::IpBroker;
-use minimq::config::BufferConfig;
 use minimq::embedded_time::rate::Fraction;
 use minimq::embedded_time::{self, Clock, Instant};
 use minimq::{ConfigBuilder, Minimq};
@@ -101,7 +99,7 @@ fn main() -> ! {
         },
         |mem_start| {
             let stack_start = 0x20020000;
-            defmt::println!(
+            defmt::info!(
                 "Define application. Memory starts at: {} free stack space {} byte",
                 mem_start,
                 stack_start - (mem_start as usize)
@@ -166,7 +164,7 @@ fn main() -> ! {
                     0,
                 )
                 .unwrap();
-            println!("WLAN thread started");
+            defmt::info!("WLAN thread started");
 
             let measure_thread_stack = MEASURE_THREAD_STACK.init_with(|| [0u8; 512]);
             let measure_thread: &'static mut Thread = MEASURE_THREAD.init(Thread::new());
@@ -182,12 +180,12 @@ fn main() -> ! {
                 )
                 .unwrap();
 
-            println!("Measure thread started");
+            defmt::info!("Measure thread started");
         },
     );
 
     tx.initialize();
-    println!("Exit");
+    defmt::info!("Exit");
     threadx_app::exit()
 }
 
@@ -204,11 +202,11 @@ fn do_measurement(
             WaitForever,
         )
         .unwrap();
-    println!("WLAN connected, beginning to measure");
+    defmt::info!("WLAN connected, beginning to measure");
     loop {
         let deg = hts221.temperature_x8(&mut i2c).unwrap() as i32;
         let _ = snd.send(Event::TemperatureMeasurement(deg), WaitForever);
-        println!("Current temperature: {}", deg);
+        defmt::info!("Current temperature: {}", deg);
         let _ = sleep(Duration::from_secs(5));
     }
 }
@@ -271,7 +269,7 @@ pub fn do_network(
     evt_handle: EventFlagsGroupHandle,
     display: &Mutex<Option<DisplayType<I2CBus>>>,
 ) -> ! {
-    defmt::println!("Initializing Network");
+    defmt::info!("Initializing Network");
     // Initialize the globlal async executor
     let executor = Executor::new();
     let mut display = display.lock(WaitForever).unwrap().take().unwrap();
@@ -282,7 +280,7 @@ pub fn do_network(
         panic!();
     }
     let network = network.unwrap();
-    defmt::println!("Network initialized"); // 192.168.1.47
+    defmt::info!("Network initialized"); // 192.168.1.47
     let remote_addr = SocketAddr::new(core::net::IpAddr::V4(Ipv4Addr::new(192, 168, 2, 100)), 1883);
     let mut buffer = [0u8; 512];
     let mqtt_cfg = ConfigBuilder::new(IpBroker::new(remote_addr.ip()), &mut buffer)

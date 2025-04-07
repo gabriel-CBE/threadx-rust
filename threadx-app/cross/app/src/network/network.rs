@@ -6,7 +6,7 @@ use core::{
 };
 
 use cortex_m::itm::Aligned;
-use defmt::{error, println};
+use defmt::error;
 use minimq::embedded_nal::{TcpClientStack, TcpError};
 use netx_sys::*;
 use ringbuffer::{ConstGenericRingBuffer, RingBuffer};
@@ -200,14 +200,14 @@ impl ThreadxTcpWifiNetwork {
 
         let hostname = c"myBoard0".as_ptr() as *mut core::ffi::c_char;
         let dhcp_client_ptr = DHCP_CLIENT.uninit();
-        println!("Starting dhcp");
+        defmt::info!("Starting dhcp");
         nx_checked_call!(_nx_dhcp_create(
             dhcp_client_ptr.as_mut_ptr(),
             ip_ptr.as_mut_ptr(),
             hostname
         ))?;
 
-        println!("Starting WiFi join");
+        defmt::info!("Starting WiFi join");
         nx_checked_call!(_nx_dhcp_start(dhcp_client_ptr.as_mut_ptr()))?;
         let ssid_b = ssid_str.as_bytes();
         if ssid_b.len() > 32 {
@@ -427,7 +427,7 @@ impl TcpClientStack for ThreadxTcpWifiNetwork {
         } else if res == NX_NO_PACKET {
             return Err(embedded_nal::nb::Error::WouldBlock);
         } else {
-            defmt::println!("Receive error: {}", res);
+            defmt::info!("Receive error: {}", res);
             return Err(embedded_nal::nb::Error::Other(NetxTcpError::from(
                 NxError::from_u32(res),
             )));

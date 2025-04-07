@@ -2,13 +2,12 @@ use super::{error::TxError, WaitOption};
 use crate::{tx_checked_call, tx_checked_call_no_log};
 use core::mem::size_of;
 use core::{ffi::CStr, mem::MaybeUninit};
-use defmt::{error, println};
 use num_traits::FromPrimitive;
 use threadx_sys::{_tx_queue_create, _tx_queue_receive, _tx_queue_send, TX_QUEUE, ULONG};
 
-/// Wrapper around the ThreadX queue. ThreadX will copy the message so the best approximation is to restrict the type to be Copy. 
-/// Since messages might be received by a different thread any reference must be valid for 'static. Note that the message struct will be dropped 
-/// at the end of this function. 
+/// Wrapper around the ThreadX queue. ThreadX will copy the message so the best approximation is to restrict the type to be Copy.
+/// Since messages might be received by a different thread any reference must be valid for 'static. Note that the message struct will be dropped
+/// at the end of this function.
 pub struct Queue<T: Copy + 'static>(MaybeUninit<TX_QUEUE>, core::marker::PhantomData<T>);
 
 impl<T: core::marker::Copy + 'static> Queue<T> {
@@ -28,7 +27,6 @@ impl<T: core::marker::Copy + 'static> Queue<T> {
         queue_memory: &'static mut [u8],
     ) -> Result<(QueueSender<T>, QueueReceiver<T>), TxError> {
         let queue_ptr = self.0.as_mut_ptr();
-        println!("Creating queue with message size: {}", size_of::<T>());
         tx_checked_call!(_tx_queue_create(
             queue_ptr,
             name.as_ptr() as *mut i8,
