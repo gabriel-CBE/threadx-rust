@@ -11,7 +11,7 @@ use alloc::string::ToString;
 use board::{BoardMxAz3166, I2CBus, LowLevelInit};
 
 use cortex_m::interrupt::Mutex;
-use defmt::println;
+use defmt::info;
 use embedded_graphics::mono_font::ascii::FONT_9X18;
 use embedded_graphics::prelude::Point;
 use embedded_graphics::text::{Baseline, Text};
@@ -69,7 +69,7 @@ fn main() -> ! {
         },
         // Start of Application definition
         |mem_start| {
-            defmt::println!("Define application. Memory starts at: {} ", mem_start);
+            defmt::info!("Define application. Memory starts at: {} ", mem_start);
 
             // Inefficient, creates array on the stack first.
             let display_thread_stack = DISPLAY_THREAD_STACK.init_with(|| [0u8; 2048]);
@@ -201,12 +201,12 @@ fn main() -> ! {
                 )
                 .unwrap();
 
-            defmt::println!("Done with app init.");
+            defmt::info!("Done with app init.");
         },
     );
 
     tx.initialize();
-    println!("Exit");
+    defmt::info!("Exit");
     threadx_app::exit()
 }
 
