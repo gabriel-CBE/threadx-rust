@@ -64,7 +64,7 @@ unsafe impl GlobalAlloc for ThreadXAllocator {
             panic!("Use of ThreadX allocator before it was initialized");
         }
         let mut ptr: *mut c_void = core::ptr::null_mut() as *mut c_void;
-
+        defmt::info!("Allocation of size: {}", layout.size());
         // Calculate next size which is a multiple of the alignment
         let size = layout.size() + ((layout.align() - layout.size()) % layout.align());
 

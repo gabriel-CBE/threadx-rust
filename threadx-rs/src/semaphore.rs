@@ -42,7 +42,7 @@ impl Semaphore {
         }
         tx_checked_call!(_tx_semaphore_create(
             sem_ptr,
-            name.as_ptr() as *mut i8,
+            name.as_ptr() as *mut u8,
             initial_count as u32
         ))
         .map(|_| SemaphoreOwnerHandle::new(sem_ptr))

@@ -45,7 +45,7 @@ impl BytePool {
 
         tx_checked_call!(_tx_byte_pool_create(
             pool_ptr,
-            name.as_ptr() as *mut i8,
+            name.as_ptr() as *mut u8,
             pool_memory.as_mut_ptr() as *mut core::ffi::c_void,
             pool_memory.len() as ULONG
         ))
@@ -126,7 +126,7 @@ impl BlockPool {
 
         tx_checked_call!(_tx_block_pool_create(
             pool_ptr,
-            name.as_ptr() as *mut i8,
+            name.as_ptr() as *mut u8,
             block_size as ULONG,
             pool_memory.as_mut_ptr() as *mut core::ffi::c_void,
             pool_memory.len() as ULONG

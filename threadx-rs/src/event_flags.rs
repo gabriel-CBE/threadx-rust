@@ -59,7 +59,7 @@ impl EventFlagsGroup {
 
         // Safety:  'static mut borrow of self pins the control struct of the event flag group so it cannot be moved. 
         //          this is necessary since internally it uses an intrusive linked list.
-        tx_checked_call!(_tx_event_flags_create(group_ptr, name.as_ptr() as *mut i8))?;
+        tx_checked_call!(_tx_event_flags_create(group_ptr, name.as_ptr() as *mut u8))?;
         Ok(EventFlagsGroupHandle {
             flag_group_ptr: group_ptr,
         })

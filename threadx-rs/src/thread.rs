@@ -64,7 +64,7 @@ impl Thread {
         tx_checked_call!(_tx_thread_create(
             self.tx_struct.as_mut_ptr(),
             // TODO: Ensure that threadx api does not modify the name.
-            name.as_ptr() as *mut i8,
+            name.as_ptr() as *mut u8,
             Some(thread_box_callback_trampoline),
             entry_function_addr,
             stack.as_mut_ptr() as *mut core::ffi::c_void,
@@ -98,7 +98,7 @@ impl Thread {
         tx_checked_call!(_tx_thread_create(
             // TODO: Ensure that threadx api does not modify this
             self.tx_struct.as_mut_ptr(),
-            name.as_ptr() as *mut i8,
+            name.as_ptr() as *mut u8,
             entry_function,
             arg,
             stack.as_mut_ptr() as *mut core::ffi::c_void,

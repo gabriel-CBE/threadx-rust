@@ -11,7 +11,6 @@ use alloc::string::ToString;
 use board::{BoardMxAz3166, I2CBus, LowLevelInit};
 
 use cortex_m::interrupt::Mutex;
-use defmt::info;
 use embedded_graphics::mono_font::ascii::FONT_9X18;
 use embedded_graphics::prelude::Point;
 use embedded_graphics::text::{Baseline, Text};
@@ -54,6 +53,29 @@ impl From<u8> for DisplayState {
     }
 }
 
+fn bla() -> impl FnOnce() {
+    let a = 32;
+    // Capture something
+    move || defmt::info!("Bla {}", a)
+}
+trait _EmbassyInternalTaskFn: Copy {
+    type Func: FnOnce() + 'static;
+}
+
+impl<F, FUNC> _EmbassyInternalTaskFn for F
+where
+    F: Copy + FnOnce() -> FUNC,
+    FUNC: FnOnce() + 'static
+{
+    type Func = FUNC;
+}
+const fn __func_size<F>(_: F) -> usize
+where
+    F: _EmbassyInternalTaskFn,
+{
+    size_of::<F::Func>()
+}
+static BLA: usize = __func_size(bla);
 static DISPLAY_STATE: AtomicU8 = AtomicU8::new(DisplayState::Welcome as u8);
 static TEMP_MEASURE: AtomicI16 = AtomicI16::new(0);
 
@@ -70,7 +92,9 @@ fn main() -> ! {
         // Start of Application definition
         |mem_start| {
             defmt::info!("Define application. Memory starts at: {} ", mem_start);
-
+            defmt::info!("BLA size {}", BLA);
+            let s = size_of_val(&bla());
+            defmt::info!("Real sizer {}", s);
             // Inefficient, creates array on the stack first.
             let display_thread_stack = DISPLAY_THREAD_STACK.init_with(|| [0u8; 2048]);
             let measure_thread_stack = MEASURE_THREAD_STACK.init_with(|| [0u8; 512]);
@@ -79,6 +103,9 @@ fn main() -> ! {
             let heap_mem = HEAP.init_with(|| [0u8; 1024]);
             GLOBAL.initialize(heap_mem).unwrap();
             let executor = Executor::new();
+
+            let x = Box::new(move ||defmt::info!("Blub {}", s));
+            (*x)();
 
             let measure_task = Box::new(move || {
                 let (mut hts221, mut i2c) = extract_temperature_peripherals();

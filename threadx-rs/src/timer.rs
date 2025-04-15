@@ -72,7 +72,7 @@ impl Timer {
         let res = unsafe {
             _tx_timer_create(
                 timer,
-                name.as_ptr() as *mut i8,
+                name.as_ptr() as *mut u8,
                 Some(timer_callback_trampoline),
                 expiration_fn_addr,
                 initial_ticks,
@@ -106,7 +106,7 @@ impl Timer {
         let res = unsafe {
             _tx_timer_create(
                 timer,
-                name.as_ptr() as *mut i8,
+                name.as_ptr() as *mut u8,
                 expiration_function,
                 expiration_arg,
                 initial_ticks,

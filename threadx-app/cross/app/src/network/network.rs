@@ -1,5 +1,5 @@
 use core::{
-    ffi::c_void,
+    ffi::{c_void, CStr},
     mem::MaybeUninit,
     net::Ipv4Addr,
     ptr::{self},
@@ -214,9 +214,9 @@ impl ThreadxTcpWifiNetwork {
             defmt::error!("SSID too long, must be 32bytes maximal");
             return Err(NxError::Unknown);
         }
+        CStr::from_bytes_with_nul(ssid_str.as_bytes());
         let mut ssid: [u8; 32] = [0u8; 32];
         ssid[..ssid_str.len()].copy_from_slice(ssid_b);
-
         let ssid = wiced_ssid_t {
             length: ssid_str.len() as u8,
             value: ssid,

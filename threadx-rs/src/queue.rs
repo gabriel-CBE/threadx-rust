@@ -29,7 +29,7 @@ impl<T: core::marker::Copy + 'static> Queue<T> {
         let queue_ptr = self.0.as_mut_ptr();
         tx_checked_call!(_tx_queue_create(
             queue_ptr,
-            name.as_ptr() as *mut i8,
+            name.as_ptr() as *mut u8,
             size_of::<T>() as ULONG,
             queue_memory.as_mut_ptr() as *mut core::ffi::c_void,
             queue_memory.len() as ULONG

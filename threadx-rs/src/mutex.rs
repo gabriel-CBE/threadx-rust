@@ -88,7 +88,7 @@ impl<T> Mutex<T> {
         };
         tx_checked_call!(_tx_mutex_create(
             mutex_ptr,
-            name.as_ptr() as *mut i8,
+            name.as_ptr() as *mut u8,
             inherit as u32
         ))?;
         // Safety: MutexGuard will only dereference to a T. The structure which must not move (TX_MUTEX) will not be moved.
