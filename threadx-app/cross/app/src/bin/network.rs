@@ -224,7 +224,7 @@ fn start_clock() -> impl Clock {
 
         fn try_now(&self) -> Result<embedded_time::Instant<Self>, embedded_time::clock::Error> {
             Ok(Instant::new(
-                TICKS.fetch_add(0, core::sync::atomic::Ordering::Relaxed),
+                TICKS.load(core::sync::atomic::Ordering::Relaxed),
             ))
         }
     }

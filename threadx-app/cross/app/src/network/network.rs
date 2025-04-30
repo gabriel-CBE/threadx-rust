@@ -39,7 +39,7 @@ const NETX_RX_POOL_SIZE: UINT = (WICED_LINK_MTU + NETX_PACKET_SIZE) * NETX_RX_PA
 const NETX_TX_POOL_SIZE: UINT = (WICED_LINK_MTU + NETX_PACKET_SIZE) * NETX_TX_PACKET_COUNT;
 
 const NETX_IP_STACK_SIZE: u32 = 2048;
-const NETX_ARP_CACHE_SIZE: UINT = 512;
+const NETX_ARP_CACHE_SIZE: UINT = 520;
 
 static TX_PACKET_POOL_MEM: StaticCell<Aligned<[u8; NETX_TX_POOL_SIZE as usize]>> =
     StaticCell::new();
@@ -184,7 +184,7 @@ impl ThreadxTcpWifiNetwork {
         /*
          * ARP Cache area needs some realignment to 4bytes
          */
-        let arp_mem_ptr = NETX_ARP_CACHE_AREA.init_with(|| Aligned([0u8; 512]));
+        let arp_mem_ptr = NETX_ARP_CACHE_AREA.init_with(|| Aligned([0u8; NETX_ARP_CACHE_SIZE as usize]));
 
         nx_checked_call!(_nx_arp_enable(
             ip_ptr.as_mut_ptr(),
@@ -207,14 +207,12 @@ impl ThreadxTcpWifiNetwork {
             hostname
         ))?;
 
-        defmt::info!("Starting WiFi join");
         nx_checked_call!(_nx_dhcp_start(dhcp_client_ptr.as_mut_ptr()))?;
         let ssid_b = ssid_str.as_bytes();
         if ssid_b.len() > 32 {
             defmt::error!("SSID too long, must be 32bytes maximal");
             return Err(NxError::Unknown);
         }
-        CStr::from_bytes_with_nul(ssid_str.as_bytes());
         let mut ssid: [u8; 32] = [0u8; 32];
         ssid[..ssid_str.len()].copy_from_slice(ssid_b);
         let ssid = wiced_ssid_t {
@@ -222,6 +220,7 @@ impl ThreadxTcpWifiNetwork {
             value: ssid,
         };
 
+        defmt::info!("Starting WiFi join");
         nx_checked_call!(wwd_wifi_join(
             &ssid as *const wiced_ssid_t,
             wiced_security_t_WICED_SECURITY_WPA2_AES_PSK,
