@@ -76,7 +76,7 @@ impl Builder {
 }
 
 // This variable is defined by threadx and is used to store a pointer to the unused memory
-extern "C" {
+unsafe extern "C" {
     static mut _tx_initialize_unused_memory: *mut c_void;
     // Defined in the cortex m crate in the linker script.
     static __sheap: *const c_void;
@@ -85,7 +85,7 @@ extern "C" {
 
 /// This function is called by threadx for low level initialization
 /// such as setting up the heap and initializing the interrupt priorities
-#[no_mangle]
+#[unsafe(no_mangle)]
 unsafe extern "C" fn _tx_initialize_low_level() {
     // call the low level initialization callback. This callback returns the memory that
     // is available for the application to use.
@@ -95,7 +95,7 @@ unsafe extern "C" fn _tx_initialize_low_level() {
     _tx_initialize_unused_memory = (&raw const __sheap).add(1) as *mut c_void;
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 unsafe extern "C" fn tx_application_define(mem_start: *mut c_void) {
     // Call the application definition callback
     // Safety: This callback is called only after we initialize the DEFINE_CB in the initialize function

@@ -9,21 +9,21 @@ include!("generated.rs");
 // Functions that are implemented in assembly that are missed by bindgen
 // TODO: the SVCall and PendSV call are probably specific to Arm Cortex
 // and should be enabled based on the selected target.
-extern "C" {
+unsafe extern "C" {
     pub fn SDIO_IRQHandler() -> ();
     pub fn DMA2_Stream3_IRQHandler() -> ();
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn printf(_format: *const core::ffi::c_char) -> core::ffi::c_int {
     1
 }
 
-extern "C" {
+unsafe extern "C" {
     pub fn nx_rand16() -> UINT;
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn rand() -> UINT {
     nx_rand16()
 }

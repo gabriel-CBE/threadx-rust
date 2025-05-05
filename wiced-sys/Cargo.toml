@@ -2,7 +2,7 @@
 name = "wiced-sys"
 version = "0.2.1"
 authors = ["Jan Jongen <jan.jongen@valtech.com>"]
-edition = "2021"
+edition = "2024"
 description = "Rust bindings for Wiced MXAZ3166"
 build = "build.rs"
 links = "wiced_sdk_bin"

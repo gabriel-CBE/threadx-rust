@@ -13,12 +13,12 @@ unsafe impl Sync for TX_MUTEX {}
 // Functions that are implemented in assembly that are missed by bindgen
 // TODO: the SVCall and PendSV call are probably specific to Arm Cortex
 // and should be enabled based on the selected target.
-extern "C" {
+unsafe extern "C" {
     pub fn _tx_timer_interrupt() -> ();
     pub fn __tx_SVCallHandler() -> ();
     pub fn __tx_PendSVHandler() -> ();
     pub static mut _tx_thread_system_stack_ptr : *mut c_void;
-}
+} 
 
 // Constants that are not parsed by bindgen
 

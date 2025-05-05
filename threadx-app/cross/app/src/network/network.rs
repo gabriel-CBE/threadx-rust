@@ -1,5 +1,5 @@
 use core::{
-    ffi::{c_void, CStr},
+    ffi::c_void,
     mem::MaybeUninit,
     net::Ipv4Addr,
     ptr::{self},

@@ -24,8 +24,8 @@ pub use embedded_hal::i2c;
 pub use hts221;
 
 use ssd1306::{
-    mode::DisplayConfig, prelude::DisplayRotation, size::DisplaySize128x64, I2CDisplayInterface,
-    Ssd1306,
+    I2CDisplayInterface, Ssd1306, mode::DisplayConfig, prelude::DisplayRotation,
+    size::DisplaySize128x64,
 };
 /// Low level initialization. The low level initialization function will
 /// perform basic low level initialization of the hardware.
@@ -37,7 +37,7 @@ pub trait LowLevelInit {
 
 // cortexm-rt crate defines the _stack_start function. Due to the action of flip-link, the stack pointer
 // is moved lower down in memory after leaving space for the bss and data sections.
-extern "C" {
+unsafe extern "C" {
     static _stack_start: u32;
 }
 
@@ -168,6 +168,8 @@ impl LowLevelInit for BoardMxAz3166<I2CBus> {
                 "STR     r1, [r0, #0xD1C]",
                 "LDR     r1, =0x40FF0000",
                 "STR     r1, [r0, #0xD20]",
+                out("r1") _,
+                out("r0") _,
             );
         }
         defmt::info!("Int prio set");
@@ -263,7 +265,7 @@ pub enum BUTTONS {
 fn EXTI4() {
     cortex_m::interrupt::free(|cs| {
         if let Some(wker) = BTN_WKER.borrow(cs).borrow_mut().as_ref() {
-           wker.wake_by_ref();
+            wker.wake_by_ref();
         }
         unsafe {
             (*EXTI::ptr())

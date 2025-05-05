@@ -172,7 +172,7 @@ fn main() -> ! {
                             .unwrap();
                         }
                         DisplayState::Temperature => {
-                            let mut text = "Temperature: \n".to_owned();
+                            let mut text = "temperature: \n".to_owned();
                             let temp = (TEMP_MEASURE.load(core::sync::atomic::Ordering::Relaxed)
                                 as f32
                                 / 8.0)
