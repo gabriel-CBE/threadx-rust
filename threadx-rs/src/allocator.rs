@@ -60,25 +60,27 @@ impl ThreadXAllocator {
 
 unsafe impl GlobalAlloc for ThreadXAllocator {
     unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
+        // We do not support 0 sized types currently
+        assert!(layout.size() != 0);
+
         if !INITIALIZED.load(core::sync::atomic::Ordering::Acquire) {
             panic!("Use of ThreadX allocator before it was initialized");
         }
         let mut ptr: *mut c_void = core::ptr::null_mut() as *mut c_void;
-        defmt::info!("Allocation of size: {}", layout.size());
-        // Calculate next size which is a multiple of the alignment
-        let size = layout.size() + ((layout.align() - layout.size()) % layout.align());
+        let layout = layout.pad_to_align();
 
+        defmt::info!("Allocation of size: {}", layout.size());
         // Safety: _tx_byte_allocate is thread safe so it is ok to use the pool_ptr ie. a pointer into the static mut struct
         let res = tx_checked_call!(_tx_byte_allocate(
             self.pool_ptr,
             &mut ptr,
-            size as ULONG,
+            layout.size() as ULONG,
             TX_WAIT_FOREVER
         ))
         .map(|_| ptr as *mut u8)
         .unwrap();
         // Align the pointer
-        res.add(res.align_offset(layout.align()))
+        unsafe { res.add(res.align_offset(layout.align())) }
     }
 
     unsafe fn dealloc(&self, ptr: *mut u8, _layout: Layout) {

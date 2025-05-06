@@ -6,6 +6,7 @@ use threadx_sys::_tx_initialize_kernel_enter;
 pub mod allocator;
 pub mod error;
 pub mod event_flags;
+pub mod executor;
 pub mod mutex;
 pub mod pool;
 pub mod queue;
@@ -13,7 +14,6 @@ pub mod semaphore;
 pub mod thread;
 pub mod time;
 pub mod timer;
-pub mod executor;
 
 pub use threadx_sys::__tx_PendSVHandler as tx_pendsv_handler;
 pub use threadx_sys::_tx_timer_interrupt as tx_timer_interrupt;
@@ -43,7 +43,7 @@ pub struct Builder {
     low_level_init_cb: LowLevelInitCb,
     app_define_cb: AppDefineCb,
 }
-
+// TODO: Remove static mut 
 static mut INIT_CB: Option<LowLevelInitCb> = None;
 static mut DEFINE_CB: Option<AppDefineCb> = None;
 
@@ -91,8 +91,10 @@ unsafe extern "C" fn _tx_initialize_low_level() {
     // is available for the application to use.
     // Safety: This callback is called only after we initialize the INIT_CB in the initialize function
     // and it can never be `None`
-    INIT_CB.unwrap()(threadx_sys::TX_TIMER_TICKS_PER_SECOND);
-    _tx_initialize_unused_memory = (&raw const __sheap).add(1) as *mut c_void;
+    unsafe {
+        INIT_CB.unwrap()(threadx_sys::TX_TIMER_TICKS_PER_SECOND);
+        _tx_initialize_unused_memory = (&raw const __sheap).add(1) as *mut c_void;
+    }
 }
 
 #[unsafe(no_mangle)]
@@ -101,7 +103,9 @@ unsafe extern "C" fn tx_application_define(mem_start: *mut c_void) {
     // Safety: This callback is called only after we initialize the DEFINE_CB in the initialize function
     // and it can never be `None`
     // The kernel is started after this callback returns.
-    DEFINE_CB.unwrap()(mem_start as *mut u8);
+    unsafe {
+        DEFINE_CB.unwrap()(mem_start as *mut u8);
+    }
 }
 #[macro_export]
 macro_rules! tx_checked_call_no_log {
@@ -116,7 +120,6 @@ macro_rules! tx_checked_call_no_log {
         }
     }
 }
-
 
 #[macro_export]
 macro_rules! tx_checked_call {

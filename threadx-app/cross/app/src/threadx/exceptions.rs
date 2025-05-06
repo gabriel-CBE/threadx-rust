@@ -15,11 +15,12 @@ fn PendSV() {
 #[exception]
 unsafe fn DefaultHandler(irqn: i16) {
     if irqn == 49 {
-        sdio_irq_handler();
+        unsafe {
+            sdio_irq_handler();
+        }
     } else if irqn == 59 {
-        dmi2str3_handler();
-    } /*else {
-        defmt::println!("Got interrupt {}", irqn);
-    }*/
-    
+        unsafe {
+            dmi2str3_handler();
+        }
+    }
 }

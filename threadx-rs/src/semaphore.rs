@@ -1,10 +1,12 @@
-
-use core::{mem::MaybeUninit, ffi::CStr};
+use super::{WaitOption, error::TxError};
 use crate::tx_checked_call;
-use super::{error::TxError, WaitOption};
+use core::{ffi::CStr, mem::MaybeUninit};
 use defmt::error;
 use num_traits::FromPrimitive;
-use threadx_sys::{TX_SEMAPHORE, _tx_semaphore_create, _tx_semaphore_delete, _tx_semaphore_get, _tx_semaphore_put, _tx_semaphore_prioritize, _tx_semaphore_put_notify};
+use threadx_sys::{
+    _tx_semaphore_create, _tx_semaphore_delete, _tx_semaphore_get, _tx_semaphore_prioritize,
+    _tx_semaphore_put, _tx_semaphore_put_notify, TX_SEMAPHORE,
+};
 
 /*
 #define tx_semaphore_ceiling_put                    _tx_semaphore_ceiling_put
@@ -49,12 +51,12 @@ impl Semaphore {
     }
 }
 
-#[derive(Clone,Copy)]
+#[derive(Clone, Copy)]
 pub struct SemaphoreOwnerHandle(*mut TX_SEMAPHORE);
 pub struct SemaphoreUserHandle(*mut TX_SEMAPHORE);
 
 pub trait SemaphoreOwner {
-    fn delete(self) -> Result<(),TxError> ;
+    fn delete(self) -> Result<(), TxError>;
     fn get_semaphore_user(&self) -> SemaphoreUserHandle;
 }
 
@@ -67,13 +69,16 @@ pub trait SemaphoreUser {
 
 impl SemaphoreOwnerHandle {
     fn new(sem_ptr: *mut TX_SEMAPHORE) -> Self {
-        assert!(!sem_ptr.is_null(),"SemaphoreOwnerHandle::new sem_ptr is null");
+        assert!(
+            !sem_ptr.is_null(),
+            "SemaphoreOwnerHandle::new sem_ptr is null"
+        );
         SemaphoreOwnerHandle(sem_ptr)
     }
 }
 
 impl SemaphoreOwner for SemaphoreOwnerHandle {
-    fn delete(self) -> Result<(),TxError> {
+    fn delete(self) -> Result<(), TxError> {
         tx_checked_call!(_tx_semaphore_delete(self.0))
     }
     fn get_semaphore_user(&self) -> SemaphoreUserHandle {
@@ -83,38 +88,29 @@ impl SemaphoreOwner for SemaphoreOwnerHandle {
 
 impl SemaphoreUser for SemaphoreUserHandle {
     fn get(&self, wait: WaitOption) -> Result<(), TxError> {
-        tx_checked_call!(_tx_semaphore_get(
-            self.0,
-            wait as u32
-        ))
+        tx_checked_call!(_tx_semaphore_get(self.0, wait as u32))
     }
     fn put(&self) -> Result<(), TxError> {
-        tx_checked_call!(_tx_semaphore_put(
-            self.0
-        ))
+        tx_checked_call!(_tx_semaphore_put(self.0))
     }
 
     fn prioritize(&self) -> Result<(), TxError> {
-        tx_checked_call!(_tx_semaphore_prioritize(
-            self.0
-        ))
+        tx_checked_call!(_tx_semaphore_prioritize(self.0))
     }
 
     fn semaphore_put_notify(&self, notify: fn(SemaphoreUserHandle)) -> Result<(), TxError> {
         let trampoline = get_notify_trampoline(&notify);
-        tx_checked_call!(_tx_semaphore_put_notify(
-            self.0,
-            Some(trampoline)
-        ))
+        tx_checked_call!(_tx_semaphore_put_notify(self.0, Some(trampoline)))
     }
 }
 
 type SemaphoreNotifyCallback = unsafe extern "C" fn(*mut TX_SEMAPHORE);
 
 unsafe extern "C" fn semaphore_cb_trampoline<F>(arg: *mut TX_SEMAPHORE)
-where F: Fn(SemaphoreUserHandle)
+where
+    F: Fn(SemaphoreUserHandle),
 {
-    let closure = &mut *(arg as *mut F);
+    let closure = unsafe { &mut *(arg as *mut F) };
     closure(SemaphoreUserHandle(arg));
 }
 

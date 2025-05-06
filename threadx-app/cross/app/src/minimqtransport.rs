@@ -2,17 +2,17 @@ use embedded_nal::TcpClientStack;
 use minimq::{embedded_time, types::Utf8String, Minimq, Property, Publication};
 
 use crate::{uprotocol_v1::{UMessage, UStatus}, utransport::LocalUTransport};
-
 const KEY_UPROTOCOL_VERSION: &str = "uP";
 const KEY_MESSAGE_ID: &str = "1";
 const KEY_TYPE: &str = "2";
 const KEY_SOURCE: &str = "3";
-const KEY_SINK: &str = "4";
-const KEY_PRIORITY: &str = "5";
-const KEY_PERMISSION_LEVEL: &str = "7";
-const KEY_COMMSTATUS: &str = "8";
-const KEY_TOKEN: &str = "10";
-const KEY_TRACEPARENT: &str = "11";
+
+const _KEY_SINK: &str = "4";
+const _KEY_PRIORITY: &str = "5";
+const _KEY_PERMISSION_LEVEL: &str = "7";
+const _KEY_COMMSTATUS: &str = "8";
+const _KEY_TOKEN: &str = "10";
+const _KEY_TRACEPARENT: &str = "11";
 
 pub struct MiniMqBasedTransport<
     'buf,

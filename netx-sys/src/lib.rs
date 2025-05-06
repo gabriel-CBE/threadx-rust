@@ -25,7 +25,7 @@ unsafe extern "C" {
 
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn rand() -> UINT {
-    nx_rand16()
+    unsafe { nx_rand16() }
 }
 // Constants that are not parsed by bindgen
 

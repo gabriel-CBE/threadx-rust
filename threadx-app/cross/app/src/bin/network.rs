@@ -8,7 +8,7 @@ use core::time::Duration;
 
 use alloc::boxed::Box;
 use alloc::vec::Vec;
-use board::{hts221, BoardMxAz3166, DisplayType, I2CBus, LowLevelInit};
+use board::{BoardMxAz3166, DisplayType, I2CBus, LowLevelInit, hts221};
 
 use cortex_m::interrupt;
 use embedded_graphics::mono_font::ascii::FONT_9X18;
@@ -28,11 +28,11 @@ use threadx_rs::allocator::ThreadXAllocator;
 use threadx_rs::event_flags::GetOption::*;
 use threadx_rs::event_flags::{EventFlagsGroup, EventFlagsGroupHandle};
 
+use threadx_rs::WaitOption::*;
 use threadx_rs::executor::Executor;
 use threadx_rs::mutex::Mutex;
 use threadx_rs::queue::{Queue, QueueReceiver, QueueSender};
 use threadx_rs::thread::{self, sleep};
-use threadx_rs::WaitOption::*;
 
 use threadx_rs::thread::Thread;
 use threadx_rs::timer::Timer;
@@ -150,9 +150,8 @@ fn main() -> ! {
             let evt_handle = event_group.initialize(c"event_flag").unwrap();
 
             // Static Cell since we need an allocated but uninitialized block of memory
-            let wifi_thread_stack: &'static mut [u8; 8192] =
-                unsafe { WIFI_THREAD_STACK.uninit().assume_init_mut() };
-            let wifi_thread: &'static mut Thread = WIFI_THREAD.init(Thread::new());
+            let wifi_thread_stack = WIFI_THREAD_STACK.init_with(|| [0u8; 8192]);
+            let wifi_thread = WIFI_THREAD.init(Thread::new());
 
             let _ = wifi_thread
                 .initialize_with_autostart_box(

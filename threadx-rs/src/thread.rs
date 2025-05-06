@@ -42,12 +42,14 @@ fn __threadx_fn(_val: u32) {
 unsafe extern "C" fn thread_box_callback_trampoline(arg: ULONG) {
     let argc: *mut alloc::boxed::Box<dyn FnOnce()> =
         core::ptr::with_exposed_provenance_mut(arg as usize);
-    (argc.read())();
+    unsafe {
+        (argc.read())();
+    }
 }
 
 impl Thread {
     // Safety: Sincd we can go from 'static mut to a Pinned state via static_mut the control structure
-    // inside the Thread struct will not move. 
+    // inside the Thread struct will not move.
     pub fn initialize_with_autostart_box(
         &'static mut self,
         name: &CStr,

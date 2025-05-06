@@ -34,8 +34,11 @@ extern crate alloc;
 
 // arg will point to the wide pointer of a dyn Fn()
 unsafe extern "C" fn timer_callback_trampoline(arg: ULONG) {
-    let argc: *mut alloc::boxed::Box<dyn Fn()> = core::ptr::with_exposed_provenance_mut(arg as usize);
-    (*argc)();
+    let argc: *mut alloc::boxed::Box<dyn Fn()> =
+        core::ptr::with_exposed_provenance_mut(arg as usize);
+    unsafe {
+        (*argc)();
+    }
 }
 
 pub struct Timer(MaybeUninit<TX_TIMER>);
@@ -67,7 +70,6 @@ impl Timer {
         let initial_ticks = TxTicks::from(initial_ticks).into();
         let reschedule_ticks = TxTicks::from(reschedule_ticks).into();
         let auto_activate = if auto_activate { 1 } else { 0 };
-
 
         let res = unsafe {
             _tx_timer_create(

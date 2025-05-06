@@ -1,3 +1,4 @@
 /target
 cross/target
 Cargo.lock
+/threadx-app/cross/app.map
