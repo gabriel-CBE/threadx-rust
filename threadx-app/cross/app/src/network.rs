@@ -13,9 +13,7 @@ use ringbuffer::{ConstGenericRingBuffer, RingBuffer};
 use static_cell::StaticCell;
 use threadx_sys::{UINT, ULONG};
 
-use crate::nx_checked_call;
-
-use super::NxError;
+use crate::{nx_checked_call, NxError};
 
 // Wiced constant
 const MAX_BUS_HEADER_LENGTH: UINT = 12;

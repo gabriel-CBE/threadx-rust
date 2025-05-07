@@ -20,7 +20,7 @@ use minimq::{ConfigBuilder, Minimq};
 use netx_sys::ULONG;
 use static_cell::StaticCell;
 use threadx_app::minimqtransport::MiniMqBasedTransport;
-use threadx_app::network::network::ThreadxTcpWifiNetwork;
+use threadx_app::network::ThreadxTcpWifiNetwork;
 
 use threadx_app::uprotocol_v1::UMessage;
 use threadx_app::utransport::LocalUTransport;
