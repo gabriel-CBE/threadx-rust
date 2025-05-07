@@ -70,23 +70,6 @@ impl NxError {
     } 
 }
 
-#[macro_export]
-macro_rules! nx_checked_call {
-    ($func:ident($($arg:expr),*)) => {
-        {
-            use defmt::error;
-            use defmt::trace;
-            let ret = unsafe { $func($($arg),*) };
-            if ret != netx_sys::NX_SUCCESS {
-                error!("NetXDuo call {} returned {}", stringify!($func), ret);
-                Err(NxError::from_u32(ret))
-            } else {
-                trace!("NetXDuo call {} Success", stringify!($func));
-                Ok(())
-            }
-        }
-    }
-}
 // defmt-test 0.3.0 has the limitation that this `#[tests]` attribute can only be used
 // once within a crate. the module can be in any file but there can only be at most
 // one `#[tests]` module in this library crate

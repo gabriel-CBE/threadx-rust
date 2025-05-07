@@ -36,7 +36,7 @@ fn main() -> ! {
     let tx = threadx_rs::Builder::new(
         // low level initialization
         |ticks_per_second| {
-            BoardMxAz3166::low_level_init(ticks_per_second).unwrap();
+            BoardMxAz3166::low_level_init(ticks_per_second);
         },
         // Start of Application definition
         |mem_start| {

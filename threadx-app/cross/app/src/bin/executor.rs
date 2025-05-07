@@ -61,7 +61,7 @@ fn main() -> ! {
     let tx = threadx_rs::Builder::new(
         // low level initialization
         |ticks_per_second| {
-            let board = BoardMxAz3166::low_level_init(ticks_per_second).unwrap();
+            let board = BoardMxAz3166::low_level_init(ticks_per_second);
             // ThreadX mutexes cannot be used here.
             cortex_m::interrupt::free(|cs| BOARD.borrow(cs).borrow_mut().replace(board));
         },

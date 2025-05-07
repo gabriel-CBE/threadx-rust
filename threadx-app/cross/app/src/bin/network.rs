@@ -93,7 +93,7 @@ static DISPLAY: StaticCell<Mutex<Option<DisplayType<I2CBus>>>> = StaticCell::new
 fn main() -> ! {
     let tx = threadx_rs::Builder::new(
         |ticks_per_second| {
-            let board = BoardMxAz3166::low_level_init(ticks_per_second).unwrap();
+            let board = BoardMxAz3166::low_level_init(ticks_per_second);
             // ThreadX mutexes cannot be used here.
             interrupt::free(|cs| BOARD.borrow(cs).borrow_mut().replace(board));
         },

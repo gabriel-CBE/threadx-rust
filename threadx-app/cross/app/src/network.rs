@@ -13,8 +13,24 @@ use ringbuffer::{ConstGenericRingBuffer, RingBuffer};
 use static_cell::StaticCell;
 use threadx_sys::{UINT, ULONG};
 
-use crate::{nx_checked_call, NxError};
+use crate:: NxError;
 
+macro_rules! nx_checked_call {
+    ($func:ident($($arg:expr),*)) => {
+        {
+            use defmt::error;
+            use defmt::trace;
+            let ret = unsafe { $func($($arg),*) };
+            if ret != netx_sys::NX_SUCCESS {
+                error!("NetXDuo call {} returned {}", stringify!($func), ret);
+                Err(NxError::from_u32(ret))
+            } else {
+                trace!("NetXDuo call {} Success", stringify!($func));
+                Ok(())
+            }
+        }
+    }
+}
 // Wiced constant
 const MAX_BUS_HEADER_LENGTH: UINT = 12;
 const MAX_SDPCM_HEADER_LENGTH: UINT = 18;

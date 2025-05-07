@@ -29,10 +29,12 @@ use ssd1306::{
 };
 /// Low level initialization. The low level initialization function will
 /// perform basic low level initialization of the hardware.
+/// TODO: How to make it generic to work with other boards?
+/// Failure on this level should result in panic so we directly return the board
 pub trait LowLevelInit {
     /// The input is the number of ticks per second that ThreadX will be
     /// expecting. The output is an initialized Board struct
-    fn low_level_init(ticks_per_second: u32) -> Result<BoardMxAz3166<I2CBus>, ()>;
+    fn low_level_init(ticks_per_second: u32) -> BoardMxAz3166<I2CBus>;
 }
 
 // cortexm-rt crate defines the _stack_start function. Due to the action of flip-link, the stack pointer
@@ -83,7 +85,7 @@ impl embedded_hal::i2c::I2c for I2CBus {
 static SHARED_BUS: Mutex<RefCell<Option<I2c<I2C1>>>> = Mutex::new(RefCell::new(None));
 
 impl LowLevelInit for BoardMxAz3166<I2CBus> {
-    fn low_level_init(ticks_per_second: u32) -> Result<BoardMxAz3166<I2CBus>, ()> {
+    fn low_level_init(ticks_per_second: u32) -> BoardMxAz3166<I2CBus> {
         unsafe {
             let stack_start = &_stack_start as *const u32 as u32;
             threadx_sys::_tx_thread_system_stack_ptr = stack_start as *mut c_void;
@@ -173,12 +175,12 @@ impl LowLevelInit for BoardMxAz3166<I2CBus> {
             );
         }
         defmt::info!("Int prio set");
-        Ok(BoardMxAz3166 {
+        BoardMxAz3166 {
             display: Some(display),
             temp_sensor: Some(hts221),
             i2c_bus: Some(bus),
             btn_a: Some(InputButton::new(button)),
-        })
+        }
     }
 }
 
