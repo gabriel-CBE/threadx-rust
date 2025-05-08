@@ -98,7 +98,7 @@ fn main() -> ! {
             interrupt::free(|cs| BOARD.borrow(cs).borrow_mut().replace(board));
         },
         |mem_start| {
-            let stack_start = 0x20020000;
+            let stack_start = 0x2002_0000;
             defmt::info!(
                 "Define application. Memory starts at: {} free stack space {} byte",
                 mem_start,
@@ -203,7 +203,7 @@ fn do_measurement(
         .unwrap();
     defmt::info!("WLAN connected, beginning to measure");
     loop {
-        let deg = hts221.temperature_x8(&mut i2c).unwrap() as i32;
+        let deg = i32::from(hts221.temperature_x8(&mut i2c).unwrap());
         let _ = snd.send(Event::TemperatureMeasurement(deg), WaitForever);
         defmt::info!("Current temperature: {}", deg);
         let _ = sleep(Duration::from_secs(5));
@@ -262,7 +262,12 @@ fn print_text(text: &str, display: &mut DisplayType<I2CBus>) {
 
     display.flush().unwrap();
 }
-
+/// # Panics
+///
+/// Will panic on nearly any kind of failure: 
+///     - Not being able to obtain the display lock
+///     - Not being able to connect to WiFi or other network initialization issues
+///   
 pub fn do_network(
     recv: QueueReceiver<Event>,
     evt_handle: EventFlagsGroupHandle,

@@ -87,15 +87,15 @@ static SHARED_BUS: Mutex<RefCell<Option<I2c<I2C1>>>> = Mutex::new(RefCell::new(N
 impl LowLevelInit for BoardMxAz3166<I2CBus> {
     fn low_level_init(ticks_per_second: u32) -> BoardMxAz3166<I2CBus> {
         unsafe {
-            let stack_start = &_stack_start as *const u32 as u32;
+            let stack_start = &raw const _stack_start;
             threadx_sys::_tx_thread_system_stack_ptr = stack_start as *mut c_void;
             defmt::info!(
-                "Low level init.  Stack at: {=u32:#x} Ticks per second:{}",
-                stack_start,
+                "Low level init.  Stack at: {:x} Ticks per second:{}",
+                stack_start.addr(),
                 ticks_per_second
             );
 
-            defmt::info!("Stack size {}", stack_start - 0x2000_0000);
+            defmt::info!("Stack size {}", stack_start.wrapping_sub(0x2000_0000));
         }
         let p = pac::Peripherals::take().unwrap();
 
@@ -206,11 +206,11 @@ impl<const P: char, const N: u8> InputButton<P, N> {
     }
 
     pub async fn wait_for_button_pressed(&self) {
-        InputButtonFuture::new(self, ButtonState::Pressed).await
+        InputButtonFuture::new(self, ButtonState::Pressed).await;
     }
 
     pub async fn wait_for_button_released(&self) {
-        InputButtonFuture::new(self, ButtonState::Released).await
+        InputButtonFuture::new(self, ButtonState::Released).await;
     }
 }
 
@@ -252,7 +252,7 @@ impl<const P: char, const N: u8> Future for InputButtonFuture<'_, P, N> {
                     return core::task::Poll::Ready(());
                 }
             }
-        };
+        }
         core::task::Poll::Pending
     }
 }
@@ -272,7 +272,7 @@ fn EXTI4() {
         unsafe {
             (*EXTI::ptr())
                 .pr()
-                .write(|w| w.bits(1 << BUTTONS::ButtonA as u32))
+                .write(|w| w.bits(1 << BUTTONS::ButtonA as u32));
         };
     });
 }

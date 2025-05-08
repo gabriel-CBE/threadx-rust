@@ -146,7 +146,7 @@ impl ThreadxTcpWifiNetwork {
             NETX_TX_POOL_SIZE as UINT
         ))?;
 
-        name = c"RX 0".as_ptr() as *mut core::ffi::c_char;
+        name = c"RX 0".as_ptr().cast_mut();
 
         let pool_mem_ptr = RX_PACKET_POOL_MEM
             .init_with(|| Aligned([0u8; NETX_RX_POOL_SIZE as usize]))
@@ -301,7 +301,7 @@ fn drain_to_buffer(buffer: &mut [u8], ringbuffer: &mut ConstGenericRingBuffer<u8
     let buffer_len = buffer.len();
     let drain_to = buffer_len.min(ringbuffer.len());
     for v in ringbuffer.drain().take(drain_to).zip(0..drain_to) {
-        buffer[v.1] = v.0
+        buffer[v.1] = v.0;
     }
     drain_to
 }
@@ -338,7 +338,7 @@ impl TcpClientStack for ThreadxTcpWifiNetwork {
                     _nx_tcp_client_socket_connect(
                         socket.socket_ptr,
                         socket_addr_v4.ip().to_bits(),
-                        socket_addr_v4.port() as u32,
+                        u32::from(socket_addr_v4.port()),
                         NX_WAIT_FOREVER,
                     )
                 };
@@ -408,9 +408,10 @@ impl TcpClientStack for ThreadxTcpWifiNetwork {
             // Safety: We successfully received a packet so packet_ptr points to this.
             let packet = unsafe { *packet_ptr };
             // Check if the packet fits into the user supplied buffer
-            if packet.nx_packet_length > self.recv_int_buf.len().try_into().unwrap() {
-                panic!("Intermediate buffer too small");
-            }
+            assert!(
+                packet.nx_packet_length > self.recv_int_buf.len().try_into().unwrap(),
+                "Intermediate buffer too small"
+            );
 
             let res = unsafe {
                 _nx_packet_data_retrieve(

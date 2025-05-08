@@ -1,7 +1,10 @@
 use embedded_nal::TcpClientStack;
-use minimq::{embedded_time, types::Utf8String, Minimq, Property, Publication};
+use minimq::{Minimq, Property, Publication, embedded_time, types::Utf8String};
 
-use crate::{uprotocol_v1::{UMessage, UStatus}, utransport::LocalUTransport};
+use crate::{
+    uprotocol_v1::{UMessage, UStatus},
+    utransport::LocalUTransport,
+};
 const KEY_UPROTOCOL_VERSION: &str = "uP";
 const KEY_MESSAGE_ID: &str = "1";
 const KEY_TYPE: &str = "2";
@@ -31,7 +34,9 @@ impl<'buf, TcpStack: TcpClientStack, Clock: embedded_time::Clock, Broker: minimq
             mqtt_client: client,
         }
     }
-
+    /// # Panics
+    ///
+    /// Will panic on poll error different then Network or SessionReset
     pub fn poll(&mut self) {
         match self
             .mqtt_client
@@ -39,10 +44,10 @@ impl<'buf, TcpStack: TcpClientStack, Clock: embedded_time::Clock, Broker: minimq
         {
             Ok(_) => (),
             Err(minimq::Error::Network(_e)) => {
-                defmt::warn!("Network disconnect, trying to reconnect.")
+                defmt::warn!("Network disconnect, trying to reconnect.");
             }
             Err(minimq::Error::SessionReset) => {
-                defmt::info!("Session reset.")
+                defmt::info!("Session reset.");
             }
             _ => panic!("Error during poll, giving up."),
         }
@@ -86,8 +91,7 @@ where
             ),
         ];
 
-        self
-            .mqtt_client
+        self.mqtt_client
             .client()
             .publish(
                 Publication::new("Vehicle_B/000A/0/2/800A", message.payload())

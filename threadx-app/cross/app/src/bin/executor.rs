@@ -11,16 +11,16 @@ use alloc::string::ToString;
 use board::{BoardMxAz3166, I2CBus, LowLevelInit};
 
 use cortex_m::interrupt::Mutex;
+use embedded_graphics::Drawable;
 use embedded_graphics::mono_font::ascii::FONT_9X18;
 use embedded_graphics::prelude::Point;
 use embedded_graphics::text::{Baseline, Text};
-use embedded_graphics::Drawable;
 use embedded_graphics::{mono_font::MonoTextStyleBuilder, pixelcolor::BinaryColor};
 use static_cell::StaticCell;
 use threadx_rs::allocator::ThreadXAllocator;
 use threadx_rs::executor::Executor;
 
-use threadx_rs::thread::{sleep, Thread};
+use threadx_rs::thread::{Thread, sleep};
 
 extern crate alloc;
 
@@ -143,9 +143,9 @@ fn main() -> ! {
                         }
                         DisplayState::Temperature => {
                             let mut text = "temperature: \n".to_owned();
-                            let temp = (TEMP_MEASURE.load(core::sync::atomic::Ordering::Relaxed)
-                                as f32
-                                / 8.0)
+                            let temp = (f32::from(
+                                TEMP_MEASURE.load(core::sync::atomic::Ordering::Relaxed),
+                            ) / 8.0)
                                 .to_string();
                             text.push_str(&temp);
                             text.push('C');

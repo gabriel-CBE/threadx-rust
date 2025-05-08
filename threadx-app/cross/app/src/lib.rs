@@ -42,9 +42,9 @@ pub fn exit() -> ! {
 ///
 
 #[cortex_m_rt::exception]
-unsafe fn HardFault(_frame: &cortex_m_rt::ExceptionFrame) -> ! {
+unsafe fn HardFault(frame: &cortex_m_rt::ExceptionFrame) -> ! {
     
-    defmt::error!("Exception PC {}, r0 {}", _frame.pc(), _frame.r0());
+    defmt::error!("Exception PC {}, r0 {}", frame.pc(), frame.r0());
     loop {
         debug::exit(debug::EXIT_FAILURE);
     }
