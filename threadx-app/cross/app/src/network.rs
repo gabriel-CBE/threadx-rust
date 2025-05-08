@@ -1,5 +1,4 @@
 use core::{
-    ffi::c_void,
     mem::MaybeUninit,
     net::Ipv4Addr,
     ptr::{self},
@@ -13,7 +12,7 @@ use ringbuffer::{ConstGenericRingBuffer, RingBuffer};
 use static_cell::StaticCell;
 use threadx_sys::{UINT, ULONG};
 
-use crate:: NxError;
+use crate::NxError;
 
 macro_rules! nx_checked_call {
     ($func:ident($($arg:expr),*)) => {
@@ -133,7 +132,7 @@ impl ThreadxTcpWifiNetwork {
 
         unsafe { _nx_system_initialize() };
 
-        let mut name = c"TX 0".as_ptr() as *mut core::ffi::c_char;
+        let mut name = c"TX 0".as_ptr().cast_mut();
 
         let pool_mem_ptr = TX_PACKET_POOL_MEM
             .init_with(|| Aligned([0u8; NETX_TX_POOL_SIZE as usize]))
@@ -143,7 +142,7 @@ impl ThreadxTcpWifiNetwork {
             POOL[TX_IDX].as_mut_ptr(),
             name,
             WICED_LINK_MTU,
-            pool_mem_ptr as *mut core::ffi::c_void,
+            pool_mem_ptr.cast(),
             NETX_TX_POOL_SIZE as UINT
         ))?;
 
@@ -158,12 +157,12 @@ impl ThreadxTcpWifiNetwork {
             POOL[RX_IDX].as_mut_ptr(),
             name,
             WICED_LINK_MTU,
-            pool_mem_ptr as *mut core::ffi::c_void,
+            pool_mem_ptr.cast(),
             NETX_RX_POOL_SIZE as UINT
         ))?;
 
         let pool_ptr = &raw mut POOL;
-        nx_checked_call!(wwd_buffer_init(pool_ptr as *mut core::ffi::c_void))?;
+        nx_checked_call!(wwd_buffer_init(pool_ptr.cast()))?;
 
         nx_checked_call!(wwd_management_wifi_on(
             wiced_country_code_t_WICED_COUNTRY_WORLD_WIDE_XX
@@ -172,11 +171,11 @@ impl ThreadxTcpWifiNetwork {
         let mut mac = wiced_mac_t { octet: [0; 6] };
 
         nx_checked_call!(wwd_wifi_get_mac_address(
-            &mut mac as *mut wiced_mac_t,
+            &raw mut mac,
             wwd_interface_t_WWD_STA_INTERFACE
         ))?;
 
-        name = c"NetX IP Instance 0".as_ptr() as *mut core::ffi::c_char;
+        name = c"NetX IP Instance 0".as_ptr().cast_mut();
 
         let netx_ip_mem_ptr = NETX_IP_STACK
             .init_with(|| Aligned([0u8; NETX_IP_STACK_SIZE as usize]))
@@ -190,7 +189,7 @@ impl ThreadxTcpWifiNetwork {
             Ipv4Addr::new(255, 255, 255, 0).to_bits(),
             POOL[TX_IDX].as_mut_ptr(),
             Some(wiced_sta_netx_duo_driver_entry),
-            netx_ip_mem_ptr as *mut core::ffi::c_void,
+            netx_ip_mem_ptr.cast(),
             NETX_IP_STACK_SIZE as UINT,
             1
         ))?;
@@ -198,11 +197,12 @@ impl ThreadxTcpWifiNetwork {
         /*
          * ARP Cache area needs some realignment to 4bytes
          */
-        let arp_mem_ptr = NETX_ARP_CACHE_AREA.init_with(|| Aligned([0u8; NETX_ARP_CACHE_SIZE as usize]));
+        let arp_mem_ptr =
+            NETX_ARP_CACHE_AREA.init_with(|| Aligned([0u8; NETX_ARP_CACHE_SIZE as usize]));
 
         nx_checked_call!(_nx_arp_enable(
             ip_ptr.as_mut_ptr(),
-            arp_mem_ptr.0.as_mut_ptr() as *mut c_void,
+            arp_mem_ptr.0.as_mut_ptr().cast(),
             NETX_ARP_CACHE_SIZE as UINT
         ))?;
 
@@ -212,13 +212,13 @@ impl ThreadxTcpWifiNetwork {
 
         nx_checked_call!(_nx_icmp_enable(ip_ptr.as_mut_ptr()))?;
 
-        let hostname = c"myBoard0".as_ptr() as *mut core::ffi::c_char;
+        let hostname = c"myBoard0".as_ptr();
         let dhcp_client_ptr = DHCP_CLIENT.uninit();
         defmt::info!("Starting dhcp");
         nx_checked_call!(_nx_dhcp_create(
             dhcp_client_ptr.as_mut_ptr(),
             ip_ptr.as_mut_ptr(),
-            hostname
+            hostname.cast_mut()
         ))?;
 
         nx_checked_call!(_nx_dhcp_start(dhcp_client_ptr.as_mut_ptr()))?;
@@ -236,7 +236,7 @@ impl ThreadxTcpWifiNetwork {
 
         defmt::info!("Starting WiFi join");
         nx_checked_call!(wwd_wifi_join(
-            &ssid as *const wiced_ssid_t,
+            &raw const ssid,
             wiced_security_t_WICED_SECURITY_WPA2_AES_PSK,
             pw.as_ptr(),
             pw.len() as u8,
@@ -253,19 +253,19 @@ impl ThreadxTcpWifiNetwork {
         nx_checked_call!(_nx_ip_status_check(
             ip_ptr.as_mut_ptr(),
             NX_IP_ADDRESS_RESOLVED,
-            &mut actual_status as *mut ULONG,
+            &raw mut actual_status,
             3000
         ))?;
 
         nx_checked_call!(_nx_ip_address_get(
             ip_ptr.as_mut_ptr(),
-            &mut ip_address as *mut ULONG,
-            &mut network_mask as *mut ULONG
+            &raw mut ip_address,
+            &raw mut network_mask
         ))?;
 
         nx_checked_call!(_nx_ip_gateway_address_get(
             ip_ptr.as_mut_ptr(),
-            &mut gateway_address as *mut ULONG
+            &raw mut gateway_address
         ))?;
         let socket_ptr = Self::create_socket(ip_ptr.as_mut_ptr())?;
         let network = ThreadxTcpWifiNetwork {
@@ -278,13 +278,13 @@ impl ThreadxTcpWifiNetwork {
     }
 
     fn create_socket(ip_ptr: *mut NX_IP) -> Result<*mut NX_TCP_SOCKET, NxError> {
-        let name = c"TCP_SOCKET".as_ptr() as *mut core::ffi::c_char;
+        let name = c"TCP_SOCKET".as_ptr();
         let socket_ptr = SOCKET_PTR.uninit();
 
         nx_checked_call!(_nx_tcp_socket_create(
             ip_ptr,
             socket_ptr.as_mut_ptr(),
-            name,
+            name.cast_mut(),
             NX_IP_NORMAL,
             NX_DONT_FRAGMENT,
             0x80,
@@ -375,7 +375,7 @@ impl TcpClientStack for ThreadxTcpWifiNetwork {
         // give it a *mut.
         nx_checked_call!(_nx_packet_data_append(
             packet_ptr,
-            buffer.as_ptr() as *mut c_void,
+            buffer.as_ptr().cast_mut().cast(),
             buffer.len() as u32,
             POOL[TX_IDX].as_mut_ptr(),
             NX_WAIT_FOREVER
@@ -415,8 +415,8 @@ impl TcpClientStack for ThreadxTcpWifiNetwork {
             let res = unsafe {
                 _nx_packet_data_retrieve(
                     packet_ptr,
-                    self.recv_int_buf.as_mut_ptr() as *mut c_void,
-                    &mut bytes_copied as *mut ULONG,
+                    self.recv_int_buf.as_mut_ptr().cast(),
+                    &raw mut bytes_copied,
                 )
             };
             // If possible copy directly to the user buffer
