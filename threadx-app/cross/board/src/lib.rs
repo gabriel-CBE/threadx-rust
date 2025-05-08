@@ -175,7 +175,7 @@ impl LowLevelInit for BoardMxAz3166<I2CBus> {
             );
         }
         defmt::info!("Int prio set");
-        BoardMxAz3166 {
+        Self {
             display: Some(display),
             temp_sensor: Some(hts221),
             i2c_bus: Some(bus),
@@ -194,8 +194,8 @@ enum ButtonState {
 }
 
 impl<const P: char, const N: u8> InputButton<P, N> {
-    pub fn new(pin: Pin<P, N, Input>) -> Self {
-        InputButton { pin }
+    pub const fn new(pin: Pin<P, N, Input>) -> Self {
+        Self { pin }
     }
 
     fn is_high(&self) -> bool {
@@ -220,7 +220,7 @@ struct InputButtonFuture<'a, const P: char, const N: u8> {
 }
 
 impl<'a, const P: char, const N: u8> InputButtonFuture<'a, P, N> {
-    fn new(pin: &'a InputButton<P, N>, expected_state: ButtonState) -> Self {
+    const fn new(pin: &'a InputButton<P, N>, expected_state: ButtonState) -> Self {
         InputButtonFuture {
             pin,
             expected_button_state: expected_state,

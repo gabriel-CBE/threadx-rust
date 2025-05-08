@@ -29,7 +29,7 @@ pub struct MiniMqBasedTransport<
 impl<'buf, TcpStack: TcpClientStack, Clock: embedded_time::Clock, Broker: minimq::Broker>
     MiniMqBasedTransport<'buf, TcpStack, Clock, Broker>
 {
-    pub fn new(client: Minimq<'buf, TcpStack, Clock, Broker>) -> Self {
+    pub const fn new(client: Minimq<'buf, TcpStack, Clock, Broker>) -> Self {
         MiniMqBasedTransport {
             mqtt_client: client,
         }

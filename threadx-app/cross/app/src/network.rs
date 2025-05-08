@@ -117,14 +117,14 @@ impl From<NxError> for NetxTcpError {
 impl From<NxError> for stm32f4xx_hal::nb::Error<NetxTcpError> {
     fn from(value: NxError) -> Self {
         match value {
-            NxError::SocketClosed => embedded_nal::nb::Error::Other(NetxTcpError::SocketClosed),
-            _ => embedded_nal::nb::Error::Other(value.into()),
+            NxError::SocketClosed => Self::Other(NetxTcpError::SocketClosed),
+            _ => Self::Other(value.into()),
         }
     }
 }
 
 impl ThreadxTcpWifiNetwork {
-    pub fn initialize(ssid_str: &str, pw: &str) -> Result<ThreadxTcpWifiNetwork, NxError> {
+    pub fn initialize(ssid_str: &str, pw: &str) -> Result<Self, NxError> {
         let initialized = INITIALIZED.try_init(true);
         if initialized.is_none() {
             return Err(NxError::AlreadyInitialized);
@@ -268,7 +268,7 @@ impl ThreadxTcpWifiNetwork {
             &raw mut gateway_address
         ))?;
         let socket_ptr = Self::create_socket(ip_ptr.as_mut_ptr())?;
-        let network = ThreadxTcpWifiNetwork {
+        let network = Self {
             socket: Some(NetxTcpSocket { socket_ptr }),
             recv_buffer: ConstGenericRingBuffer::<u8, 512>::new(),
             recv_int_buf: [0u8; 512],
@@ -314,11 +314,7 @@ impl TcpClientStack for ThreadxTcpWifiNetwork {
     fn socket(&mut self) -> Result<Self::TcpSocket, Self::Error> {
         defmt::info!("Getting the socket");
         let socket = self.socket.take();
-        if let Some(sock) = socket {
-            Ok(sock)
-        } else {
-            Err(NetxTcpError::NoSocketsAvailable)
-        }
+        socket.ok_or(NetxTcpError::NoSocketsAvailable)
     }
 
     fn connect(
@@ -467,9 +463,8 @@ impl TcpClientStack for ThreadxTcpWifiNetwork {
         nx_checked_call!(_nx_tcp_client_socket_unbind(socket.socket_ptr))?;
         // Put socket back for reusee
         defmt::info!("Reuusing the socket");
-        self.socket = Some(NetxTcpSocket {
-            socket_ptr: socket.socket_ptr,
-        });
+        // Putting the socket back into self for reuuse.
+        self.socket = Some(socket);
         Ok(())
     }
 }

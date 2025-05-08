@@ -61,7 +61,7 @@ pub enum NxError {
 }
 
 impl NxError {
-    pub fn from_u32(val: u32) -> NxError {
+    pub const fn from_u32(val: u32) -> Self {
         match val {
             netx_sys::NX_POOL_ERROR => Self::PoolError,
             netx_sys::NX_NOT_CONNECTED => Self::SocketClosed,

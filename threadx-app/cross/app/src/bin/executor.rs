@@ -46,9 +46,9 @@ enum DisplayState {
 impl From<u8> for DisplayState {
     fn from(value: u8) -> Self {
         match value {
-            0 => DisplayState::Welcome,
-            1 => DisplayState::Temperature,
-            _ => DisplayState::Welcome,
+            0 => Self::Welcome,
+            1 => Self::Temperature,
+            _ => Self::Welcome,
         }
     }
 }
