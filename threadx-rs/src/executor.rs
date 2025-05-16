@@ -33,7 +33,6 @@ use core::{
 };
 
 use crate::{event_flags::EventFlagsGroup, mutex::Mutex, WaitOption::WaitForever};
-use defmt::println;
 use static_cell::StaticCell;
 
 use crate::event_flags::EventFlagsGroupHandle;
@@ -121,7 +120,7 @@ impl Signal {
                 self.event_flag_handle.publish(requested_flag).unwrap()
             }
             SignalState::Unused => {
-                println!("Ignoring notification, waker is connected to interrupt but nobody is listening")
+                defmt::warn!("Ignoring notification, waker is connected to interrupt but nobody is listening")
             }
         }
     }

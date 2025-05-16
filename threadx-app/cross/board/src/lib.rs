@@ -239,6 +239,7 @@ impl<'a, const P: char, const N: u8> InputButtonFuture<'a, P, N> {
 }
 
 static BTN_WKER: Mutex<RefCell<Option<Waker>>> = Mutex::new(RefCell::new(None));
+static BTN_B_WKER: Mutex<RefCell<Option<Waker>>> = Mutex::new(RefCell::new(None));
 
 impl<const P: char, const N: u8> Future for InputButtonFuture<'_, P, N> {
     type Output = ();
@@ -248,9 +249,15 @@ impl<const P: char, const N: u8> Future for InputButtonFuture<'_, P, N> {
         cx: &mut core::task::Context<'_>,
     ) -> core::task::Poll<Self::Output> {
         let waker = cx.waker().clone();
-        cortex_m::interrupt::free(|cs| {
-            BTN_WKER.borrow(cs).borrow_mut().replace(waker);
-        });
+        if N == 4 {
+            cortex_m::interrupt::free(|cs| {
+                BTN_WKER.borrow(cs).borrow_mut().replace(waker);
+            });
+        } else {
+            cortex_m::interrupt::free(|cs| {
+                BTN_B_WKER.borrow(cs).borrow_mut().replace(waker);
+            });
+        }
         match self.expected_button_state {
             ButtonState::Pressed => {
                 if self.pin.is_low() {
@@ -290,7 +297,7 @@ fn EXTI4() {
 #[interrupt]
 fn EXTI15_10() {
     cortex_m::interrupt::free(|cs| {
-        if let Some(wker) = BTN_WKER.borrow(cs).borrow_mut().as_ref() {
+        if let Some(wker) = BTN_B_WKER.borrow(cs).borrow_mut().as_ref() {
             wker.wake_by_ref();
         }
         unsafe {

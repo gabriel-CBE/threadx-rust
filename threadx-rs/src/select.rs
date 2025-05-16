@@ -37,6 +37,7 @@ where
         if let core::task::Poll::Ready(val) = pin_fut_a.poll(cx) {
             return core::task::Poll::Ready(Either::Left(val));
         }
+
         if let core::task::Poll::Ready(val) = pin_fut_b.poll(cx) {
             return core::task::Poll::Ready(Either::Right(val));
         }

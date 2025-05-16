@@ -114,8 +114,8 @@ fn main() -> ! {
                         };
 
                         match button_pressed {
-                            board::BUTTONS::ButtonA => btn_a.wait_for_button_pressed().await,
-                            board::BUTTONS::ButtonB => btn_b.wait_for_button_pressed().await,
+                            board::BUTTONS::ButtonA => btn_a.wait_for_button_released().await,
+                            board::BUTTONS::ButtonB => btn_b.wait_for_button_released().await,
                         }
 
                         let state = DisplayState::from(
