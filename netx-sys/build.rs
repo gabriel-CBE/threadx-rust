@@ -1,7 +1,7 @@
-// Build script for Building threadx and to create the bindings
+// Build script for Building netxduo and to create the bindings in combination with Wiced
 
-use bindgen::callbacks::ParseCallbacks;
 use bindgen::Builder;
+use bindgen::callbacks::ParseCallbacks;
 use cmake::Config;
 use std::env;
 use std::io::{BufRead, Write};
@@ -90,7 +90,7 @@ fn main() {
     };
 
     // Build netx
-    let mut cfg = Config::new(src_path.to_owned());
+    let mut cfg = Config::new(&src_path);
 
     cfg.define("CMAKE_TOOLCHAIN_FILE", toolchain_file)
         .generator("Ninja")
@@ -101,8 +101,8 @@ fn main() {
             compiler_wrapper_path.as_path(),
         );
 
-    if nx_user_file_path.is_some() {
-        cfg.define("NX_USER_FILE", nx_user_file_path.unwrap().to_str().unwrap());
+    if let Some(ref nx_user_file_path) = nx_user_file_path {
+        cfg.define("NX_USER_FILE", nx_user_file_path.to_str().unwrap());
     };
 
     let dst = cfg.build().join("build/netxduo");
@@ -114,7 +114,7 @@ fn main() {
 
     println!("cargo:rustc-link-search=native={}", dst.display());
     println!("cargo:rustc-link-lib=static=netxduo");
-    
+
     println!("cargo:rustc-link-search={}", wiced_src.display());
     println!("cargo:rustc-link-lib=static=wiced_sdk_bin");
 
@@ -128,22 +128,20 @@ fn main() {
     let mut defines = Vec::new();
     let mut compiler = None;
 
-    for line in build_commands {
-        if let Ok(line) = line {
-            if compiler.is_none() {
-                // get the compiler from the first line
-                let compiler_cmd = line.split(" ").take(1).next().unwrap();
-                compiler = Some(compiler_cmd.to_string());
-            }
+    for line in build_commands.map_while(Result::ok) {
+        if compiler.is_none() {
+            // get the compiler from the first line
+            let compiler_cmd = line.split(" ").take(1).next().unwrap();
+            compiler = Some(compiler_cmd.to_string());
+        }
 
-            for cmd in line.split(" ") {
-                if cmd.starts_with("-I") {
-                    let include_dir = cmd.trim_start_matches("-I");
-                    include_dirs.push(include_dir.to_string());
-                } else if cmd.starts_with("-D") {
-                    let define = cmd.trim_start_matches("-D");
-                    defines.push(define.to_string());
-                }
+        for cmd in line.split(" ") {
+            if cmd.starts_with("-I") {
+                let include_dir = cmd.trim_start_matches("-I");
+                include_dirs.push(include_dir.to_string());
+            } else if cmd.starts_with("-D") {
+                let define = cmd.trim_start_matches("-D");
+                defines.push(define.to_string());
             }
         }
     }
@@ -219,7 +217,7 @@ fn main() {
     bindings = bindings.clang_arg(format!(
         "-I{}",
         src_path.join("threadx/common/inc").display()
-    )); 
+    ));
 
     let bindings = bindings.generate().expect("Unable to generate bindings");
 
@@ -231,7 +229,6 @@ fn main() {
     let mut out_file = std::fs::OpenOptions::new()
         .create(false)
         .append(true)
-        .write(true)
         .open(&bindings_path)
         .expect("Unable to open bindings file");
 
@@ -247,7 +244,7 @@ fn main() {
 
     // Copy the file to src/generated.rs to keep the documentation build happy
     std::fs::copy(
-        PathBuf::from(bindings_path),
+        bindings_path,
         PathBuf::from("src/generated.rs"),
     )
     .unwrap();

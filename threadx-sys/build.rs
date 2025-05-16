@@ -1,34 +1,34 @@
 // Build script for Building threadx and to create the bindings
 
-use std::io::{Write, BufRead};
-use std::os::unix::fs::OpenOptionsExt;
-use std::path::PathBuf;
-use std::process::Command;
-use std::env;
-use std::sync::{Arc, Mutex};
 use bindgen::Builder;
 use bindgen::callbacks::ParseCallbacks;
 use cmake::Config;
+use std::env;
+use std::io::{BufRead, Write};
+use std::os::unix::fs::OpenOptionsExt;
+use std::path::PathBuf;
+use std::process::Command;
+use std::sync::{Arc, Mutex};
 
 fn main() {
-
     let out_dir = PathBuf::from(env::var("OUT_DIR").expect("OUT_DIR is not set"));
     let tx_user_file = env::var("TX_USER_FILE").ok();
     let threadx_mfst = PathBuf::from(env::var("CARGO_MANIFEST_DIR").unwrap());
-    // We use the git submodule inside netx to build threadx.  
+    // We use the git submodule inside netx to build threadx.
     let src_path = threadx_mfst.join("../netx-sys/shared/threadx"); // source code of threadx is vendored here
-   println!("Using out_dir: {}", out_dir.display());
-    let tx_user_file_path = 
-    if let Some(tx_user_file) = tx_user_file {
-        let tx_user_file = PathBuf::from(tx_user_file).canonicalize().expect("Unable to find TX_USER_FILE");
+    println!("Using out_dir: {}", out_dir.display());
+    let tx_user_file_path = if let Some(tx_user_file) = tx_user_file {
+        let tx_user_file = PathBuf::from(tx_user_file)
+            .canonicalize()
+            .expect("Unable to find TX_USER_FILE");
         println!("cargo:info=Using TX_USER_FILE: {}", tx_user_file.display());
-        println!("cargo:rerun-if-changed={}",tx_user_file.display());
+        println!("cargo:rerun-if-changed={}", tx_user_file.display());
         Some(tx_user_file)
     } else {
         println!("cargo:info=No TX_USER_FILE specified, using defaults");
         None
     };
-    
+
     let target = env::var("TARGET").expect("TARGET is not set");
 
     /*
@@ -43,23 +43,31 @@ fn main() {
     let build_commands = out_dir.join("build_commands.txt");
 
     // We create a wrapper script to capture the commands passed to the compiler
-    let launcher_script = format!(r#"
+    let launcher_script = format!(
+        r#"
     #!/bin/sh
     #echo "Wrapper $@"
     set -e
     echo "$@" >> {}
     exec $@
-    "#, out_dir.join("build_commands.txt").display());
+    "#,
+        out_dir.join("build_commands.txt").display()
+    );
 
     let compiler_wrapper_path = out_dir.join("compiler_wrapper.sh");
 
     let _ = std::fs::remove_file(compiler_wrapper_path.as_path());
 
-    let mut file = std::fs::OpenOptions::new().write(true).mode(0o700).create_new(true).open(compiler_wrapper_path.as_path()).expect("Unable to open wrapper");
-    file.write_all(launcher_script.as_bytes()).expect("Unable to write wrapper");
+    let mut file = std::fs::OpenOptions::new()
+        .write(true)
+        .mode(0o700)
+        .create_new(true)
+        .open(compiler_wrapper_path.as_path())
+        .expect("Unable to open wrapper");
+    file.write_all(launcher_script.as_bytes())
+        .expect("Unable to write wrapper");
     file.flush().expect("Unable to flush wrapper");
     drop(file);
-
 
     let toolchain_file = match target.as_str() {
         "thumbv6m-none-eabi" => "cmake/cortex_m0.cmake",
@@ -71,54 +79,59 @@ fn main() {
         _ => {
             println!("cargo:error=Unsupported cortex M target: {}", target);
             panic!("Unsupported cortex M target: {}", target);
-            
         }
     };
 
     // Build threadx
-    let mut cfg = Config::new(src_path.to_owned());
+    let mut cfg = Config::new(&src_path);
 
-        cfg.define("CMAKE_TOOLCHAIN_FILE", toolchain_file)
+    cfg.define("CMAKE_TOOLCHAIN_FILE", toolchain_file)
         .generator("Ninja")
         .build_target("threadx")
         .env("CMAKE_C_COMPILER_LAUNCHER", compiler_wrapper_path.as_path())
-        .env("CMAKE_CXX_COMPILER_LAUNCHER", compiler_wrapper_path.as_path());
+        .env(
+            "CMAKE_CXX_COMPILER_LAUNCHER",
+            compiler_wrapper_path.as_path(),
+        );
 
-    if tx_user_file_path.is_some() {
-        cfg.define("TX_USER_FILE", tx_user_file_path.unwrap().to_str().unwrap());
+    if let Some(ref tx_user_file_path) = tx_user_file_path {
+        cfg.define("TX_USER_FILE", tx_user_file_path.to_str().unwrap());
     };
 
-    let dst= cfg.build().join("build");
+    let dst = cfg.build().join("build");
 
-    println!("cargo:info=threadx build completed and output at {}", dst.display());
+    println!(
+        "cargo:info=threadx build completed and output at {}",
+        dst.display()
+    );
 
     println!("cargo:rustc-link-search=native={}", dst.display());
     println!("cargo:rustc-link-lib=static=threadx");
 
     // Parse the build_commands.txt file to find the include directories and other compiler flags
-    let build_commands = std::fs::OpenOptions::new().read(true).open(build_commands.as_path()).expect("Unable to open build_commands.txt");
+    let build_commands = std::fs::OpenOptions::new()
+        .read(true)
+        .open(build_commands.as_path())
+        .expect("Unable to open build_commands.txt");
     let build_commands = std::io::BufReader::new(build_commands).lines();
     let mut include_dirs = Vec::new();
-    let mut defines =  Vec::new();
+    let mut defines = Vec::new();
     let mut compiler = None;
 
-    for line in build_commands {
-        if let Ok(line) = line {
+    for line in build_commands.map_while(Result::ok) {
+        if compiler.is_none() {
+            // get the compiler from the first line
+            let compiler_cmd = line.split(" ").take(1).next().unwrap();
+            compiler = Some(compiler_cmd.to_string());
+        }
 
-            if compiler.is_none() {
-                // get the compiler from the first line
-                let compiler_cmd = line.split(" ").take(1).next().unwrap();
-                compiler = Some(compiler_cmd.to_string());
-            }
-
-            for cmd in line.split(" ") {
-                if cmd.starts_with("-I") {
-                    let include_dir = cmd.trim_start_matches("-I");
-                    include_dirs.push(include_dir.to_string());
-                } else if cmd.starts_with("-D") {
-                    let define = cmd.trim_start_matches("-D");
-                    defines.push(define.to_string());
-                }
+        for cmd in line.split(" ") {
+            if cmd.starts_with("-I") {
+                let include_dir = cmd.trim_start_matches("-I");
+                include_dirs.push(include_dir.to_string());
+            } else if cmd.starts_with("-D") {
+                let define = cmd.trim_start_matches("-D");
+                defines.push(define.to_string());
             }
         }
     }
@@ -143,14 +156,19 @@ fn main() {
     for define in defines {
         bindings = bindings.clang_arg(format!("-D{}", define));
     }
-    
+
     let int_macros = Arc::new(Mutex::new(Vec::new()));
 
     let mut bindings = configure_builder(bindings, int_macros.clone());
 
     // Get the standard include paths from the compiler
     // Create an empty file to pass to the compiler
-    std::fs::OpenOptions::new().create(true).truncate(true).write(true).open(out_dir.join("empty.c")).expect("Unable to create empty.c");
+    std::fs::OpenOptions::new()
+        .create(true)
+        .truncate(true)
+        .write(true)
+        .open(out_dir.join("empty.c"))
+        .expect("Unable to create empty.c");
     let output = Command::new(compiler.unwrap())
         .arg("-xc")
         .arg("-E")
@@ -160,7 +178,7 @@ fn main() {
         .expect("Unable to run compiler");
 
     let output = String::from_utf8(output.stderr).expect("Unable to parse compiler output");
-    
+
     let mut inside_include_dirs = false;
     let mut compiler_include_dirs = Vec::new();
     for line in output.lines() {
@@ -183,37 +201,43 @@ fn main() {
         bindings = bindings.clang_arg(format!("-I{}", include_dir));
     }
 
-    let bindings = bindings
-        .generate()
-        .expect("Unable to generate bindings");
+    let bindings = bindings.generate().expect("Unable to generate bindings");
 
-    bindings.write_to_file(bindings_path.clone())
+    bindings
+        .write_to_file(bindings_path.clone())
         .expect("Couldn't write bindings");
 
     // now generate the int macros
-    let mut out_file = std::fs::OpenOptions::new().create(false).append(true).write(true).open(&bindings_path).expect("Unable to open bindings file");
+    let mut out_file = std::fs::OpenOptions::new()
+        .create(false)
+        .append(true)
+        .open(&bindings_path)
+        .expect("Unable to open bindings file");
 
-    writeln!(out_file,"// Constants extracted from TX_API.H and TX_PORT.H with overridden values").expect("Unable to write int macros");
+    writeln!(
+        out_file,
+        "// Constants extracted from TX_API.H and TX_PORT.H with overridden values"
+    )
+    .expect("Unable to write int macros");
     for (name, value) in int_macros.lock().unwrap().iter() {
-        writeln!(out_file, "pub const {} : UINT = {};", name, value).expect("Unable to write int macro");
+        writeln!(out_file, "pub const {} : UINT = {};", name, value)
+            .expect("Unable to write int macro");
     }
 
     // Copy the file to src/generated.rs to keep the documentation build happy
-    std::fs::copy(PathBuf::from(bindings_path), PathBuf::from("src/generated.rs")).unwrap();
+    std::fs::copy(bindings_path, PathBuf::from("src/generated.rs")).unwrap();
 }
 
 // Configure the builder
-fn configure_builder( builder : Builder, int_macros: Arc<Mutex<Vec<(String,String)>>>) -> Builder {
+fn configure_builder(builder: Builder, int_macros: Arc<Mutex<Vec<(String, String)>>>) -> Builder {
     builder
-    .fit_macro_constants(false)
-    .parse_callbacks(Box::new(Callbacks{int_macros}))
-
+        .fit_macro_constants(false)
+        .parse_callbacks(Box::new(Callbacks { int_macros }))
 }
 
-
 #[derive(Debug)]
-struct Callbacks{
-    int_macros: Arc<Mutex<Vec<(String,String)>>>,
+struct Callbacks {
+    int_macros: Arc<Mutex<Vec<(String, String)>>>,
 }
 
 impl ParseCallbacks for Callbacks {
@@ -239,12 +263,15 @@ impl ParseCallbacks for Callbacks {
     fn int_macro(&self, _name: &str, _value: i64) -> Option<bindgen::callbacks::IntKind> {
         //println!("Int Macro: {}={}", _name, _value);
         if _name.starts_with("TX_") {
-            self.int_macros.lock().unwrap().push((_name.to_string(), _value.to_string()));
+            self.int_macros
+                .lock()
+                .unwrap()
+                .push((_name.to_string(), _value.to_string()));
         }
         Some(bindgen::callbacks::IntKind::U32)
     }
 
-    // fn str_macro(&self, _name: &str, _value: &[u8]) { 
+    // fn str_macro(&self, _name: &str, _value: &[u8]) {
     //     println!("STR MACRO: {}={}", _name, String::from_utf8_lossy(_value))
     // }
 

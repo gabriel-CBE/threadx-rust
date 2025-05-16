@@ -11,7 +11,7 @@ include!("generated.rs");
 unsafe impl Send for TX_MUTEX {}
 unsafe impl Sync for TX_MUTEX {}
 // Functions that are implemented in assembly that are missed by bindgen
-// TODO: the SVCall and PendSV call are probably specific to Arm Cortex
+// TODO: the SVCall and PendSV call are specific to Arm Cortex
 // and should be enabled based on the selected target.
 unsafe extern "C" {
     pub fn _tx_timer_interrupt() -> ();

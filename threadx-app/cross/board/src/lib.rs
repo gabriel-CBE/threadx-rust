@@ -34,7 +34,7 @@ use ssd1306::{
 pub trait LowLevelInit {
     /// The input is the number of ticks per second that ThreadX will be
     /// expecting. The output is an initialized Board struct
-    fn low_level_init(ticks_per_second: u32) -> BoardMxAz3166<I2CBus>;
+    fn low_level_init(ticks_per_second: u32) -> Self; 
 }
 
 // cortexm-rt crate defines the _stack_start function. Due to the action of flip-link, the stack pointer
