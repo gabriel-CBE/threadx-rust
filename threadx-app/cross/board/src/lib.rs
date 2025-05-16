@@ -34,7 +34,7 @@ use ssd1306::{
 pub trait LowLevelInit {
     /// The input is the number of ticks per second that ThreadX will be
     /// expecting. The output is an initialized Board struct
-    fn low_level_init(ticks_per_second: u32) -> Self; 
+    fn low_level_init(ticks_per_second: u32) -> Self;
 }
 
 // cortexm-rt crate defines the _stack_start function. Due to the action of flip-link, the stack pointer
@@ -58,6 +58,7 @@ where
     pub temp_sensor: Option<TempSensorType<I2CBus>>,
     pub i2c_bus: Option<I2CBus>,
     pub btn_a: Option<InputButton<'A', 4>>,
+    pub btn_b: Option<InputButton<'A', 10>>,
 }
 
 #[derive(Clone, Copy)]
@@ -129,13 +130,21 @@ impl LowLevelInit for BoardMxAz3166<I2CBus> {
         let mut syscfg = p.SYSCFG.constrain();
         let mut exti = p.EXTI;
 
-        let mut button = gpioa.pa4.into_input();
-        button.enable_interrupt(&mut exti);
-        button.make_interrupt_source(&mut syscfg);
-        button.clear_interrupt_pending_bit();
-        button.trigger_on_edge(&mut exti, stm32f4xx_hal::gpio::Edge::RisingFalling);
+        let mut button_a = gpioa.pa4.into_input();
+        button_a.enable_interrupt(&mut exti);
+        button_a.make_interrupt_source(&mut syscfg);
+        button_a.clear_interrupt_pending_bit();
+        button_a.trigger_on_edge(&mut exti, stm32f4xx_hal::gpio::Edge::RisingFalling);
+
+        let mut button_b = gpioa.pa10.into_input();
+        button_b.enable_interrupt(&mut exti);
+        button_b.make_interrupt_source(&mut syscfg);
+        button_b.clear_interrupt_pending_bit();
+        button_b.trigger_on_edge(&mut exti, stm32f4xx_hal::gpio::Edge::RisingFalling);
+
         unsafe {
-            NVIC::unmask(button.interrupt());
+            NVIC::unmask(button_a.interrupt());
+            NVIC::unmask(button_b.interrupt());
         }
 
         let gpiob = p.GPIOB.split();
@@ -179,7 +188,8 @@ impl LowLevelInit for BoardMxAz3166<I2CBus> {
             display: Some(display),
             temp_sensor: Some(hts221),
             i2c_bus: Some(bus),
-            btn_a: Some(InputButton::new(button)),
+            btn_a: Some(InputButton::new(button_a)),
+            btn_b: Some(InputButton::new(button_b)),
         }
     }
 }
@@ -273,6 +283,20 @@ fn EXTI4() {
             (*EXTI::ptr())
                 .pr()
                 .write(|w| w.bits(1 << BUTTONS::ButtonA as u32));
+        };
+    });
+}
+
+#[interrupt]
+fn EXTI15_10() {
+    cortex_m::interrupt::free(|cs| {
+        if let Some(wker) = BTN_WKER.borrow(cs).borrow_mut().as_ref() {
+            wker.wake_by_ref();
+        }
+        unsafe {
+            (*EXTI::ptr())
+                .pr()
+                .write(|w| w.bits(1 << BUTTONS::ButtonB as u32));
         };
     });
 }

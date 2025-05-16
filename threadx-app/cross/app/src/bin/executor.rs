@@ -3,6 +3,8 @@
 
 use core::cell::RefCell;
 use core::sync::atomic::{AtomicI16, AtomicU8};
+use threadx_rs::select::select;
+
 use core::time::Duration;
 
 use alloc::borrow::ToOwned;
@@ -90,15 +92,31 @@ fn main() -> ! {
             });
 
             let switcher_task = Box::new(move || {
+                let btn_b = cortex_m::interrupt::free(|cs| {
+                    let mut board = BOARD.borrow(cs).borrow_mut();
+                    board.as_mut().unwrap().btn_b.take().unwrap()
+                });
+
                 let btn_a = cortex_m::interrupt::free(|cs| {
                     let mut board = BOARD.borrow(cs).borrow_mut();
                     board.as_mut().unwrap().btn_a.take().unwrap()
                 });
                 loop {
                     executor.block_on(async {
-                        // Await full button press
-                        btn_a.wait_for_button_pressed().await;
-                        btn_a.wait_for_button_released().await;
+                        // Await full button press for either button
+                        let button_pressed = select(
+                            btn_a.wait_for_button_pressed(),
+                            btn_b.wait_for_button_pressed(),
+                        );
+                        let button_pressed = match button_pressed.await {
+                            threadx_rs::either::Either::Left(_) => board::BUTTONS::ButtonA,
+                            threadx_rs::either::Either::Right(_) => board::BUTTONS::ButtonB,
+                        };
+
+                        match button_pressed {
+                            board::BUTTONS::ButtonA => btn_a.wait_for_button_pressed().await,
+                            board::BUTTONS::ButtonB => btn_b.wait_for_button_pressed().await,
+                        }
 
                         let state = DisplayState::from(
                             DISPLAY_STATE.load(core::sync::atomic::Ordering::Relaxed),

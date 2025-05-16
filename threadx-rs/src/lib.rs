@@ -14,10 +14,12 @@ pub mod semaphore;
 pub mod thread;
 pub mod time;
 pub mod timer;
+pub mod select;
 
 pub use threadx_sys::__tx_PendSVHandler as tx_pendsv_handler;
 pub use threadx_sys::_tx_timer_interrupt as tx_timer_interrupt;
 
+pub use either;
 /// Initialize ThreadX
 
 /// This callback is called by threadx for low level initialization.

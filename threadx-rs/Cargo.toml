@@ -17,3 +17,4 @@ num-derive = "0.4.1"
 defmt = "0.3.100"
 thiserror-no-std = "2.0.2"
 static_cell = "2.1.0"
+either = {version = "1.15.0", default-features = false}

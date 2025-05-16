@@ -7,7 +7,7 @@ Compared to the original we did:
 - Generate NetX bindings
 - Implement simple async executor based on https://github.com/zesterer/pollster
 - Implement embedded-nal interface for NetX/Wiced Wifi
-- Async handling of button A
+- Async interface for buttons
 
 ## Quickstart
 
