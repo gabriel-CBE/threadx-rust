@@ -264,10 +264,10 @@ fn print_text(text: &str, display: &mut DisplayType<I2CBus>) {
 }
 /// # Panics
 ///
-/// Will panic on nearly any kind of failure: 
+/// Will panic on nearly any kind of failure:
 ///     - Not being able to obtain the display lock
 ///     - Not being able to connect to WiFi or other network initialization issues
-///   
+///
 pub fn do_network(
     recv: QueueReceiver<Event>,
     evt_handle: EventFlagsGroupHandle,
@@ -277,22 +277,22 @@ pub fn do_network(
     // Initialize the globlal async executor
     let executor = Executor::new();
     let mut display = display.lock(WaitForever).unwrap().take().unwrap();
-    print_text("WLAN()\nMQTT()", &mut display);
-    let network = ThreadxTcpWifiNetwork::initialize("", "");
+    print_text("WIFI()\nMQTT()", &mut display);
+    let network = ThreadxTcpWifiNetwork::initialize("__WIFI_SSID__", "__WIFI_PASSWORD__");
     if network.is_err() {
         print_text("Failure :(", &mut display);
         panic!();
     }
     let network = network.unwrap();
-    defmt::info!("Network initialized"); // 192.168.1.47
-    let remote_addr = SocketAddr::new(core::net::IpAddr::V4(Ipv4Addr::new(192, 168, 2, 100)), 1883);
-    let mut buffer = [0u8; 512];
+    defmt::info!("Network initialized");
+    let remote_addr = SocketAddr::new(core::net::IpAddr::V4(Ipv4Addr::new(5, 196, 78, 28)), 1883); // This is a public mqtt broker at https://test.mosquitto.org/
+    let mut buffer = [0u8; 1024];
     let mqtt_cfg = ConfigBuilder::new(IpBroker::new(remote_addr.ip()), &mut buffer)
         .keepalive_interval(60)
         .client_id("mytest")
         .unwrap();
 
-    print_text("WLAN(x)\nMQTT()", &mut display);
+    print_text("WIFI(x)\nMQTT()", &mut display);
     let clock = start_clock();
     let mut transport = MiniMqBasedTransport::new(Minimq::new(network, clock, mqtt_cfg));
     // Signal that measurements can begin
@@ -304,7 +304,7 @@ pub fn do_network(
         // Need to poll the transport in order to keep it connected
         transport.poll();
         if transport.is_connected() {
-            print_text("WLAN(x)\nMQTT(x)", &mut display);
+            print_text("WIFI(x)\nMQTT(x)", &mut display);
             if let Ok(evt) = recv.receive(NoWait) {
                 // TODO: Use upRust to do it all properly. This creates a very simple (valid) uMessage MQTT payload.
                 // Create a umessage and then call send and block_on from the
@@ -314,7 +314,7 @@ pub fn do_network(
                 let _res = executor.block_on(transport.send(umessage));
             }
         } else {
-            print_text("WLAN(x)\nMQTT()", &mut display);
+            print_text("WIFI(x)\nMQTT()", &mut display);
         }
         // Poll every 1000ms
         thread::sleep(Duration::from_millis(1000)).unwrap();

@@ -94,7 +94,7 @@ where
         self.mqtt_client
             .client()
             .publish(
-                Publication::new("Vehicle_B/000A/0/2/800A", message.payload())
+                Publication::new("Vehicle_B/A/0/2/800A", message.payload())
                     .properties(&user_properties),
             )
             .unwrap();

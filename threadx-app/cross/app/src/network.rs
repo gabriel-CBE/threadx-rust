@@ -405,7 +405,7 @@ impl TcpClientStack for ThreadxTcpWifiNetwork {
             let packet = unsafe { *packet_ptr };
             // Check if the packet fits into the user supplied buffer
             assert!(
-                packet.nx_packet_length > self.recv_int_buf.len().try_into().unwrap(),
+                packet.nx_packet_length < self.recv_int_buf.len().try_into().unwrap(),
                 "Intermediate buffer too small"
             );
 
