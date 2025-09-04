@@ -87,14 +87,14 @@ where
             Property::UserProperty(Utf8String(KEY_TYPE), Utf8String("up-pub.v1")),
             Property::UserProperty(
                 Utf8String(KEY_SOURCE),
-                Utf8String("//vehicle_B/000A/2/800A"),
+                Utf8String("//threadx/000A/2/8001"),
             ),
         ];
 
         self.mqtt_client
             .client()
             .publish(
-                Publication::new("Vehicle_B/A/0/2/800A", message.payload())
+                Publication::new("threadx/A/0/2/8001", message.payload())
                     .properties(&user_properties),
             )
             .unwrap();
