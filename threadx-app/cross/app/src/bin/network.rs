@@ -2,7 +2,6 @@
 #![no_std]
 
 use core::cell::RefCell;
-use core::net::{Ipv4Addr, SocketAddr};
 use core::sync::atomic::AtomicU32;
 use core::time::Duration;
 
@@ -11,7 +10,7 @@ use alloc::vec::Vec;
 use board::{BoardMxAz3166, DisplayType, I2CBus, LowLevelInit, hts221};
 
 use cortex_m::interrupt;
-use embedded_graphics::mono_font::ascii::FONT_9X18;
+use embedded_graphics::mono_font::ascii::FONT_7X14;
 use heapless::String;
 use minimq::broker::IpBroker;
 use minimq::embedded_time::rate::Fraction;
@@ -29,6 +28,7 @@ use threadx_rs::event_flags::GetOption::*;
 use threadx_rs::event_flags::{EventFlagsGroup, EventFlagsGroupHandle};
 
 use threadx_rs::WaitOption::*;
+use threadx_rs::WaitOption;
 use threadx_rs::executor::Executor;
 use threadx_rs::mutex::Mutex;
 use threadx_rs::queue::{Queue, QueueReceiver, QueueSender};
@@ -55,10 +55,9 @@ pub enum Event {
 }
 impl From<Event> for Vec<u8> {
     fn from(val: Event) -> Self {
-        let mut str = String::<4>::new();
-
+        let mut str = String::<32>::new();
         let Event::TemperatureMeasurement(measure) = val;
-        let _ = write!(str, "{measure}");
+        let _ = write!(str, "Temp: {} C", measure);
         str.as_bytes().to_vec()
     }
 }
@@ -122,9 +121,11 @@ fn main() -> ! {
                 .as_mut()
                 .initialize(c"display_mtx", false)
                 .unwrap();
-            let display = interrupt::free(|cs| {
+            let (display, btn_a) = interrupt::free(|cs| {
                 let mut board = BOARD.borrow(cs).borrow_mut();
-                board.as_mut().unwrap().display.take().unwrap()
+                let display = board.as_mut().unwrap().display.take().unwrap();
+                let btn_a = board.as_mut().unwrap().btn_a.take();
+                (display, btn_a)
             });
             {
                 // Temporary scope to hold the lock
@@ -156,7 +157,7 @@ fn main() -> ! {
             let _ = wifi_thread
                 .initialize_with_autostart_box(
                     c"wifi_thread",
-                    Box::new(move || do_network(receiver, evt_handle, &pinned_display)),
+                    Box::new(move || do_network(receiver, evt_handle, &pinned_display, btn_a)),
                     wifi_thread_stack,
                     4,
                     4,
@@ -225,8 +226,8 @@ fn start_clock() -> impl Clock {
             Ok(Instant::new(
                 TICKS.load(core::sync::atomic::Ordering::Relaxed),
             ))
-        }
     }
+}
 
     extern "C" fn clock_tick(_arg: ULONG) {
         TICKS.fetch_add(1, core::sync::atomic::Ordering::Relaxed);
@@ -252,7 +253,7 @@ fn start_clock() -> impl Clock {
 
 fn print_text(text: &str, display: &mut DisplayType<I2CBus>) {
     let text_style = MonoTextStyleBuilder::new()
-        .font(&FONT_9X18)
+        .font(&FONT_7X14)
         .text_color(BinaryColor::On)
         .build();
     display.clear_buffer();
@@ -262,61 +263,206 @@ fn print_text(text: &str, display: &mut DisplayType<I2CBus>) {
 
     display.flush().unwrap();
 }
+
+/// Initializes the ThreadX TCP WiFi network with the given SSID and password.
+///
+/// # Arguments
+/// * `ssid` - The WiFi SSID to connect to.
+/// * `password` - The WiFi password.
+///
+/// # Returns
+/// A connected `ThreadxTcpWifiNetwork` instance. Panics if initialization fails.
+fn create_tcp_network(ssid: &str, password: &str) -> ThreadxTcpWifiNetwork {
+    ThreadxTcpWifiNetwork::initialize(ssid, password)
+        .expect("Failed to initialize TCP network")
+}
+
+/// Creates an MQTT configuration for Minimq using the provided buffer.
+///
+/// # Arguments
+/// * `buffer` - A mutable reference to a buffer for MQTT packet storage.
+///
+/// # Returns
+/// A `ConfigBuilder` for the MQTT client using the specified broker and buffer.
+fn create_mqtt_config<'a>(buffer: &'a mut [u8; 1024]) -> ConfigBuilder<'a, IpBroker> {
+    let remote_addr = core::net::SocketAddr::new(core::net::IpAddr::V4(core::net::Ipv4Addr::new(5, 196, 78, 28)), 1883);
+    let broker = IpBroker::new(remote_addr.ip());
+    ConfigBuilder::new(broker, buffer)
+        .keepalive_interval(60)
+        .client_id("mytest")
+        .unwrap()
+}
+
+/// Creates a Minimq-based transport layer for MQTT communication.
+///
+/// # Arguments
+/// * `network` - The initialized TCP WiFi network.
+/// * `clock` - The clock implementation for Minimq timing.
+/// * `config` - The MQTT configuration builder.
+///
+/// # Returns
+/// A `MiniMqBasedTransport` instance ready for MQTT operations.
+fn create_transport<'a, Clock>(
+    network: ThreadxTcpWifiNetwork,
+    clock: Clock,
+    config: ConfigBuilder<'a, IpBroker>,
+) -> MiniMqBasedTransport<'a, ThreadxTcpWifiNetwork, Clock, IpBroker>
+where
+    Clock: minimq::embedded_time::Clock,
+{
+    MiniMqBasedTransport::new(Minimq::new(network, clock, config))
+}
+
+/// Handles publishing a message to an MQTT topic.
+fn handle_publish<'buf, Clock, Broker>(
+    transport: &mut MiniMqBasedTransport<'buf, ThreadxTcpWifiNetwork, Clock, Broker>,
+    topic: &str,
+    message: &[u8],
+    executor: &Executor,
+)
+where
+    Clock: minimq::embedded_time::Clock,
+    Broker: minimq::Broker,
+{
+    if transport.is_connected() {
+        let mut umessage = UMessage::default();
+        umessage.payload.replace(message.to_vec());
+        let _res = executor.block_on(transport.send(topic, umessage));
+    }
+}
+
+/// Handles subscribing to an MQTT topic and processes received messages with a callback.
+fn handle_subscribe<'buf, Clock, Broker, F>(
+    transport: &mut MiniMqBasedTransport<'buf, ThreadxTcpWifiNetwork, Clock, Broker>,
+    topic: &str,
+    subscribed: &mut bool,
+    mut on_message: F,
+)
+where
+    Clock: minimq::embedded_time::Clock,
+    Broker: minimq::Broker,
+    F: FnMut(&str, &[u8]),
+{
+    if transport.is_connected() {
+        if !*subscribed {
+            if transport.subscribe(topic).is_ok() {
+                *subscribed = true;
+            }
+        }
+        transport.poll_with_callback(|recv_topic, payload| {
+            if recv_topic == topic {
+                on_message(recv_topic, payload);
+            }
+            ()
+        });
+    }
+}
+
 /// # Panics
 ///
 /// Will panic on nearly any kind of failure:
 ///     - Not being able to obtain the display lock
 ///     - Not being able to connect to WiFi or other network initialization issues
-///
 pub fn do_network(
     recv: QueueReceiver<Event>,
     evt_handle: EventFlagsGroupHandle,
     display: &Mutex<Option<DisplayType<I2CBus>>>,
+    btn_a: Option<board::InputButton<'A', 4>>,
 ) -> ! {
-    defmt::info!("Initializing Network");
-    // Initialize the globlal async executor
-    let executor = Executor::new();
-    let mut display = display.lock(WaitForever).unwrap().take().unwrap();
-    print_text("WIFI()\nMQTT()", &mut display);
-    let network = ThreadxTcpWifiNetwork::initialize("__WIFI_SSID__", "__WIFI_PASSWORD__");
-    if network.is_err() {
-        print_text("Failure :(", &mut display);
-        panic!();
-    }
-    let network = network.unwrap();
-    defmt::info!("Network initialized");
-    let remote_addr = SocketAddr::new(core::net::IpAddr::V4(Ipv4Addr::new(5, 196, 78, 28)), 1883); // This is a public mqtt broker at https://test.mosquitto.org/
-    let mut buffer = [0u8; 1024];
-    let mqtt_cfg = ConfigBuilder::new(IpBroker::new(remote_addr.ip()), &mut buffer)
-        .keepalive_interval(60)
-        .client_id("mytest")
-        .unwrap();
+    let ssid = "__WIFI_SSID__";
+    let password = "__WIFI_PASSWORD__";
+    let sub_topic = "threadx/A/0/2/8001";
+    let pub_topic = "threadx/A/0/2/8001";
 
-    print_text("WIFI(x)\nMQTT()", &mut display);
+    let mut display_guard = display.lock(WaitForever).unwrap();
+    if let Some(ref mut actual_display) = *display_guard {
+        print_text("Connecting \nto network...", actual_display);
+    }
+    let network = create_tcp_network(ssid, password);
+    let mut buffer = [0u8; 1024];
+    if let Some(ref mut actual_display) = *display_guard {
+        print_text("Connecting \nto MQTT broker...", actual_display);
+    }
+    let mqtt_cfg = create_mqtt_config(&mut buffer);
     let clock = start_clock();
-    let mut transport = MiniMqBasedTransport::new(Minimq::new(network, clock, mqtt_cfg));
-    // Signal that measurements can begin
+    let mut transport = create_transport(network, clock, mqtt_cfg);
+
+    let executor = Executor::new();
+
     evt_handle
         .publish(FlagEvents::WifiConnected as u32)
         .unwrap();
 
-    loop {
-        // Need to poll the transport in order to keep it connected
-        transport.poll();
-        if transport.is_connected() {
-            print_text("WIFI(x)\nMQTT(x)", &mut display);
-            if let Ok(evt) = recv.receive(NoWait) {
-                // TODO: Use upRust to do it all properly. This creates a very simple (valid) uMessage MQTT payload.
-                // Create a umessage and then call send and block_on from the
-                let mut umessage = UMessage::default();
-                umessage.payload.replace(evt.into());
+    let mut display_guard = display.lock(WaitForever).unwrap();
+    if let Some(ref mut actual_display) = *display_guard {
+        print_text("Connected", actual_display);
+    }
+    thread::sleep(Duration::from_millis(2000)).unwrap();
+    let mut subscribed = false;
 
-                let _res = executor.block_on(transport.send(umessage));
-            }
-        } else {
-            print_text("WIFI(x)\nMQTT()", &mut display);
+    let mut msg_received_counter = 0;
+    let mut msg_sent_counter = 0;
+    let mut last_msg_received = heapless::String::<64>::new();
+    let mut last_msg_sent = heapless::String::<64>::new();
+    
+    // btn_a is now owned and passed in
+
+    let mut last_engage_value = 0;
+    let mut sent_zero = false;
+    loop {
+        // Lock the display mutex each loop iteration
+        let mut display_guard = display.lock(WaitForever).unwrap();
+        if let Some(ref mut actual_display) = *display_guard {
+            handle_subscribe(
+                &mut transport,
+                sub_topic,
+                &mut subscribed,
+                |_, payload| {
+                    let msg = core::str::from_utf8(payload).unwrap_or("<invalid>");
+                    last_msg_received.clear();
+                    let _ = write!(last_msg_received, "{}", msg);
+                    // Parse value as integer and only accept 0 or 1
+                    match msg.trim().parse::<i32>() {
+                        Ok(val) if val == 0 || val == 1 => {
+                            last_engage_value = val;
+                        }
+                        Ok(other) => {
+                            last_engage_value = 0;
+                            defmt::warn!("Received invalid engage value: {}", other);
+                        }
+                        Err(_) => {
+                            last_engage_value = 0;
+                            defmt::warn!("Received non-integer engage value: {}", msg);
+                        }
+                    }
+                    msg_received_counter += 1;
+                }
+            );
         }
-        // Poll every 1000ms
-        thread::sleep(Duration::from_millis(1000)).unwrap();
+        transport.poll();
+
+        // Check button press and publish if needed
+        if let Some(ref btn) = btn_a {
+            // Only send 0 when button is pressed (active low)
+            if btn.is_low() && last_engage_value == 1 && !sent_zero {
+                let msg_vec = b"0";
+                last_msg_sent.clear();
+                let _ = write!(last_msg_sent, "{}", "0");
+                handle_publish(&mut transport, pub_topic, msg_vec, &executor);
+                msg_sent_counter += 1;
+                sent_zero = true;
+            }
+            // Reset sent_zero if topic value changes to 0 or button is released
+            if sent_zero && btn.is_high() {
+                sent_zero = false;
+            }
+        }
+
+        if let Some(ref mut actual_display) = *display_guard {
+            let mut text_buf = heapless::String::<128>::new();
+            let _ = write!(text_buf, "Recv {}: \n{}\nSend {}: \n{}", msg_received_counter, last_msg_received, msg_sent_counter, last_msg_sent);
+            print_text(&text_buf, actual_display);
+        }
+        thread::sleep(Duration::from_millis(100)).unwrap();
     }
 }
