@@ -1,5 +1,5 @@
 use embedded_nal::TcpClientStack;
-use minimq::{Minimq, Property, Publication, embedded_time, types::Utf8String};
+use minimq::{Minimq, Property, Publication, embedded_time, types::{Utf8String, TopicFilter}};
 
 use crate::{
     uprotocol_v1::{UMessage, UStatus},
@@ -56,6 +56,33 @@ impl<'buf, TcpStack: TcpClientStack, Clock: embedded_time::Clock, Broker: minimq
     pub fn is_connected(&mut self) -> bool {
         self.mqtt_client.client().is_connected()
     }
+
+    pub fn poll_with_callback<F>(&mut self, mut f: F)
+    where
+        F: FnMut(&str, &[u8]),
+    {
+        match self
+            .mqtt_client
+            .poll(|_client, topic, payload, _properties| {
+                f(topic, payload);
+                1
+            })
+        {
+            Ok(_) => (),
+            Err(minimq::Error::Network(_e)) => {
+                defmt::warn!("Network disconnect, trying to reconnect.");
+            }
+            Err(minimq::Error::SessionReset) => {
+                defmt::info!("Session reset.");
+            }
+            _ => panic!("Error during poll, giving up."),
+        }
+    }
+
+    pub fn subscribe(&mut self, topic: &str) -> Result<(), minimq::Error<<TcpStack as TcpClientStack>::Error>> {
+        let filters = [TopicFilter::new(topic)];
+        self.mqtt_client.client().subscribe(&filters, &[])
+    }
 }
 
 impl<TcpStack, Clock, Broker> LocalUTransport for MiniMqBasedTransport<'_, TcpStack, Clock, Broker>
@@ -75,10 +102,16 @@ where
     #[doc = " # Errors"]
     #[doc = ""]
     #[doc = " Returns an error if the message could not be sent."]
-    async fn send(&mut self, message: UMessage) -> Result<(), UStatus> {
+    async fn send(&mut self, topic: &str, message: UMessage) -> Result<(), UStatus> {
         let uuid = uuid::uuid!("01956d55-177b-7556-baf6-040e3127165e");
         let buffer = &mut uuid::Uuid::encode_buffer();
         let uuid_hyp = uuid.as_hyphenated().encode_lower(buffer);
+
+        // Create a user property with '//' + topic
+        let mut source_buf = heapless::String::<128>::new();
+        source_buf.push_str("//").ok();
+        source_buf.push_str(topic).ok();
+
 
         let user_properties = [
             Property::UserProperty(Utf8String(KEY_UPROTOCOL_VERSION), Utf8String("1")),
@@ -87,14 +120,14 @@ where
             Property::UserProperty(Utf8String(KEY_TYPE), Utf8String("up-pub.v1")),
             Property::UserProperty(
                 Utf8String(KEY_SOURCE),
-                Utf8String("//threadx/000A/2/8001"),
+                Utf8String(&source_buf), // Use the same topic string here!
             ),
         ];
 
         self.mqtt_client
             .client()
             .publish(
-                Publication::new("threadx/A/0/2/8001", message.payload())
+                Publication::new(topic, message.payload())
                     .properties(&user_properties),
             )
             .unwrap();
