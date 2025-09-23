@@ -284,8 +284,8 @@ fn create_tcp_network(ssid: &str, password: &str) -> ThreadxTcpWifiNetwork {
 ///
 /// # Returns
 /// A `ConfigBuilder` for the MQTT client using the specified broker and buffer.
-fn create_mqtt_config<'a>(buffer: &'a mut [u8; 1024]) -> ConfigBuilder<'a, IpBroker> {
-    let remote_addr = core::net::SocketAddr::new(core::net::IpAddr::V4(core::net::Ipv4Addr::new(5, 196, 78, 28)), 1883);
+fn create_mqtt_config<'a>(buffer: &'a mut [u8; 1024], broker_ip: core::net::Ipv4Addr) -> ConfigBuilder<'a, IpBroker> {
+    let remote_addr = core::net::SocketAddr::new(core::net::IpAddr::V4(broker_ip), 1883);
     let broker = IpBroker::new(remote_addr.ip());
     ConfigBuilder::new(broker, buffer)
         .keepalive_interval(60)
@@ -371,6 +371,9 @@ pub fn do_network(
 ) -> ! {
     let ssid = "__WIFI_SSID__";
     let password = "__WIFI_PASSWORD__";
+
+    let broker_ip = core::net::Ipv4Addr::new(5, 196, 78, 28);
+
     let sub_topic = "threadx/A/0/2/8001";
     let pub_topic = "threadx/A/0/2/8001";
 
@@ -383,7 +386,8 @@ pub fn do_network(
     if let Some(ref mut actual_display) = *display_guard {
         print_text("Connecting \nto MQTT broker...", actual_display);
     }
-    let mqtt_cfg = create_mqtt_config(&mut buffer);
+    
+    let mqtt_cfg = create_mqtt_config(&mut buffer, broker_ip);
     let clock = start_clock();
     let mut transport = create_transport(network, clock, mqtt_cfg);
 
