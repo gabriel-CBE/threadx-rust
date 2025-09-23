@@ -1,5 +1,6 @@
 #![no_main]
 #![no_std]
+use crate::alloc::string::ToString;
 
 use core::cell::RefCell;
 use core::sync::atomic::AtomicU32;
@@ -98,7 +99,7 @@ fn main() -> ! {
         },
         |mem_start| {
             let stack_start = 0x2002_0000;
-            defmt::info!(
+            defmt::println!(
                 "Define application. Memory starts at: {} free stack space {} byte",
                 mem_start,
                 stack_start - (mem_start as usize)
@@ -164,7 +165,7 @@ fn main() -> ! {
                     0,
                 )
                 .unwrap();
-            defmt::info!("WLAN thread started");
+            defmt::println!("WLAN thread started");
 
             let measure_thread_stack = MEASURE_THREAD_STACK.init_with(|| [0u8; 512]);
             let measure_thread: &'static mut Thread = MEASURE_THREAD.init(Thread::new());
@@ -180,12 +181,12 @@ fn main() -> ! {
                 )
                 .unwrap();
 
-            defmt::info!("Measure thread started");
+            defmt::println!("Measure thread started");
         },
     );
 
     tx.initialize();
-    defmt::info!("Exit");
+    defmt::println!("Exit");
     threadx_app::exit()
 }
 
@@ -202,11 +203,11 @@ fn do_measurement(
             WaitForever,
         )
         .unwrap();
-    defmt::info!("WLAN connected, beginning to measure");
+    defmt::println!("WLAN connected, beginning to measure");
     loop {
         let deg = i32::from(hts221.temperature_x8(&mut i2c).unwrap());
         let _ = snd.send(Event::TemperatureMeasurement(deg), WaitForever);
-        defmt::info!("Current temperature: {}", deg);
+        defmt::println!("Current temperature: {}", deg);
         let _ = sleep(Duration::from_secs(5));
     }
 }
@@ -380,7 +381,9 @@ pub fn do_network(
     let pub_topic = "threadx/A/0/2/8001";
 
     let mut display_guard = display.lock(WaitForever).unwrap();
+        
     print_text("Connecting \nto network...", &mut *display_guard);
+    defmt::println!("Attempting to connect to network {} ...", ssid);
 
     let network = match create_tcp_network(ssid, password) {
         Ok(net) => net,
@@ -391,6 +394,7 @@ pub fn do_network(
     };
     let mut buffer = [0u8; 1024];
     print_text("Connecting \nto MQTT broker...", &mut *display_guard);
+    defmt::println!("Connecting to MQTT broker at {} ...", broker_ip.to_string().as_str());
     
     let mqtt_cfg = match create_mqtt_config(&mut buffer, broker_ip) {
         Ok(cfg) => cfg,
@@ -437,6 +441,7 @@ pub fn do_network(
                 sub_topic,
                 &mut subscribed,
                 |_, payload| {
+                    defmt::println!("Received on {}: {:?}", sub_topic, payload);
                     let msg = core::str::from_utf8(payload).unwrap_or("<invalid>");
                     last_msg_received.clear();
                     let _ = write!(last_msg_received, "{}", msg);
@@ -447,11 +452,11 @@ pub fn do_network(
                         }
                         Ok(other) => {
                             last_engage_value = 0;
-                            defmt::warn!("Received invalid engage value: {}", other);
+                            defmt::println!("Received invalid engage value: {}", other);
                         }
                         Err(_) => {
                             last_engage_value = 0;
-                            defmt::warn!("Received non-integer engage value: {}", msg);
+                            defmt::println!("Received non-integer engage value: {}", msg);
                         }
                     }
                     msg_received_counter += 1;
@@ -468,6 +473,7 @@ pub fn do_network(
                 last_msg_sent.clear();
                 let _ = write!(last_msg_sent, "{}", "0");
                 handle_publish(&mut transport, pub_topic, msg_vec, &executor);
+                defmt::println!("Published to {}: {:?}", pub_topic, msg_vec);
                 msg_sent_counter += 1;
                 sent_zero = true;
             }
