@@ -251,17 +251,18 @@ fn start_clock() -> impl Clock {
     ThreadXSecondClock {}
 }
 
-fn print_text(text: &str, display: &mut DisplayType<I2CBus>) {
+fn print_text(text: &str, display: &mut Option<DisplayType<I2CBus>>) {
     let text_style = MonoTextStyleBuilder::new()
         .font(&FONT_7X14)
         .text_color(BinaryColor::On)
         .build();
-    display.clear_buffer();
-    Text::with_baseline(text, Point::zero(), text_style, Baseline::Top)
-        .draw(display)
-        .unwrap();
-
-    display.flush().unwrap();
+    if let Some(actual_display) = display {
+        actual_display.clear_buffer();
+        Text::with_baseline(text, Point::zero(), text_style, Baseline::Top)
+            .draw(actual_display)
+            .unwrap();
+        actual_display.flush().unwrap();
+    }   
 }
 
 /// Initializes the ThreadX TCP WiFi network with the given SSID and password.
@@ -272,9 +273,11 @@ fn print_text(text: &str, display: &mut DisplayType<I2CBus>) {
 ///
 /// # Returns
 /// A connected `ThreadxTcpWifiNetwork` instance. Panics if initialization fails.
-fn create_tcp_network(ssid: &str, password: &str) -> ThreadxTcpWifiNetwork {
-    ThreadxTcpWifiNetwork::initialize(ssid, password)
-        .expect("Failed to initialize TCP network")
+fn create_tcp_network(ssid: &str, password: &str) -> Result<ThreadxTcpWifiNetwork, ()> {
+    match ThreadxTcpWifiNetwork::initialize(ssid, password) {
+        Ok(net) => Ok(net),
+        Err(_) => Err(()),
+    }
 }
 
 /// Creates an MQTT configuration for Minimq using the provided buffer.
@@ -284,13 +287,12 @@ fn create_tcp_network(ssid: &str, password: &str) -> ThreadxTcpWifiNetwork {
 ///
 /// # Returns
 /// A `ConfigBuilder` for the MQTT client using the specified broker and buffer.
-fn create_mqtt_config<'a>(buffer: &'a mut [u8; 1024], broker_ip: core::net::Ipv4Addr) -> ConfigBuilder<'a, IpBroker> {
+fn create_mqtt_config<'a>(buffer: &'a mut [u8; 1024], broker_ip: core::net::Ipv4Addr) -> Result<ConfigBuilder<'a, IpBroker>, minimq::ProtocolError> {
     let remote_addr = core::net::SocketAddr::new(core::net::IpAddr::V4(broker_ip), 1883);
     let broker = IpBroker::new(remote_addr.ip());
     ConfigBuilder::new(broker, buffer)
         .keepalive_interval(60)
         .client_id("mytest")
-        .unwrap()
 }
 
 /// Creates a Minimq-based transport layer for MQTT communication.
@@ -306,11 +308,11 @@ fn create_transport<'a, Clock>(
     network: ThreadxTcpWifiNetwork,
     clock: Clock,
     config: ConfigBuilder<'a, IpBroker>,
-) -> MiniMqBasedTransport<'a, ThreadxTcpWifiNetwork, Clock, IpBroker>
+) -> Result<MiniMqBasedTransport<'a, ThreadxTcpWifiNetwork, Clock, IpBroker>, minimq::ProtocolError>
 where
     Clock: minimq::embedded_time::Clock,
 {
-    MiniMqBasedTransport::new(Minimq::new(network, clock, config))
+    Ok(MiniMqBasedTransport::new(Minimq::new(network, clock, config)))
 }
 
 /// Handles publishing a message to an MQTT topic.
@@ -378,18 +380,33 @@ pub fn do_network(
     let pub_topic = "threadx/A/0/2/8001";
 
     let mut display_guard = display.lock(WaitForever).unwrap();
-    if let Some(ref mut actual_display) = *display_guard {
-        print_text("Connecting \nto network...", actual_display);
-    }
-    let network = create_tcp_network(ssid, password);
+    print_text("Connecting \nto network...", &mut *display_guard);
+
+    let network = match create_tcp_network(ssid, password) {
+        Ok(net) => net,
+        Err(_) => {
+            print_text("TCP connect failed!", &mut *display_guard);
+            panic!("Failed to initialize TCP network");
+        }
+    };
     let mut buffer = [0u8; 1024];
-    if let Some(ref mut actual_display) = *display_guard {
-        print_text("Connecting \nto MQTT broker...", actual_display);
-    }
+    print_text("Connecting \nto MQTT broker...", &mut *display_guard);
     
-    let mqtt_cfg = create_mqtt_config(&mut buffer, broker_ip);
+    let mqtt_cfg = match create_mqtt_config(&mut buffer, broker_ip) {
+        Ok(cfg) => cfg,
+        Err(_) => {
+            print_text("MQTT config failed!", &mut *display_guard);
+            panic!("Failed to create MQTT config");
+        }
+    };
     let clock = start_clock();
-    let mut transport = create_transport(network, clock, mqtt_cfg);
+    let mut transport = match create_transport(network, clock, mqtt_cfg) {
+        Ok(t) => t,
+        Err(_) => {
+            print_text("MQTT transport failed!", &mut *display_guard);
+            panic!("Failed to create MQTT transport");
+        }
+    };
 
     let executor = Executor::new();
 
@@ -397,10 +414,8 @@ pub fn do_network(
         .publish(FlagEvents::WifiConnected as u32)
         .unwrap();
 
-    let mut display_guard = display.lock(WaitForever).unwrap();
-    if let Some(ref mut actual_display) = *display_guard {
-        print_text("Connected", actual_display);
-    }
+    print_text("Connected", &mut *display_guard);
+
     thread::sleep(Duration::from_millis(2000)).unwrap();
     let mut subscribed = false;
 
@@ -462,11 +477,9 @@ pub fn do_network(
             }
         }
 
-        if let Some(ref mut actual_display) = *display_guard {
-            let mut text_buf = heapless::String::<128>::new();
-            let _ = write!(text_buf, "Recv {}: \n{}\nSend {}: \n{}", msg_received_counter, last_msg_received, msg_sent_counter, last_msg_sent);
-            print_text(&text_buf, actual_display);
-        }
+        let mut text_buf = heapless::String::<128>::new();
+        let _ = write!(text_buf, "Recv {}: \n{}\nSend {}: \n{}", msg_received_counter, last_msg_received, msg_sent_counter, last_msg_sent);
+        print_text(&text_buf, &mut *display_guard);
         thread::sleep(Duration::from_millis(100)).unwrap();
     }
 }
