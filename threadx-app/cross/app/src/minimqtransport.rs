@@ -119,8 +119,8 @@ where
             Property::UserProperty(Utf8String(KEY_MESSAGE_ID), Utf8String(uuid_hyp)),
             Property::UserProperty(Utf8String(KEY_TYPE), Utf8String("up-pub.v1")),
             Property::UserProperty(
-                Utf8String(KEY_SOURCE),
-                Utf8String("//threadx/000A/2/8001"), // Use the same topic string here!
+                Utf8String(KEY_SOURCE),                
+                Utf8String("//threadx/000A/2/8001"),
             ),
         ];
 
