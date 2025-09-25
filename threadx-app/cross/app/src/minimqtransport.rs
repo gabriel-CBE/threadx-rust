@@ -127,7 +127,7 @@ where
         self.mqtt_client
             .client()
             .publish(
-                Publication::new("threadx/A/0/2/8001", message.payload())
+                Publication::new(topic, message.payload())
                     .properties(&user_properties),
             )
             .unwrap();
