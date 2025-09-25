@@ -371,8 +371,8 @@ pub fn do_network(
     display: &Mutex<Option<DisplayType<I2CBus>>>,
     btn_a: Option<board::InputButton<'A', 4>>,
 ) -> ! {
-    let ssid = "Vodafone-F375B5";
-    let password = "37GKpc849A";
+    let ssid = "__WIFI_SSID__";
+    let password = "__WIFI_PASSWORD__";
 
     // Change this line in your STM32 code:
     //let broker_ip = core::net::Ipv4Addr::new(192, 168, 1, 76);  // Your local broker
