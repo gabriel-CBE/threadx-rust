@@ -79,6 +79,16 @@ Goto `threadx-app/cross/app` and run:
 
 `cargo run --release --target thumbv7em-none-eabihf --bin executor`
 
+## Network example (raw mqtt)
+
+This example connects to a WiFi Network and to an MQTT5 broker. It subscribes to the `vehicle/parameters` topic and implements a cruise control override system - when cruise control is enabled and the user presses the button, it will disable cruise control by publishing the modified vehicle parameters back to the topic.
+
+In the `network_raw_mqtt.rs` example adapt the SSID, WLAN-Passwort and the MQTT settings accordingly.  
+
+Goto `threadx-app/cross/app` and run:
+
+`cargo run --release --target thumbv7em-none-eabihf --bin network_raw_mqtt`
+
 ## Network example
 
 This examples connects to a WiFi Network and to an MQTT5 broker and regularly publishes the current temperature as uMessage (see: Link to uProtocol). 
