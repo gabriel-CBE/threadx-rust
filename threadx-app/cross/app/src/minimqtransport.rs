@@ -83,6 +83,13 @@ impl<'buf, TcpStack: TcpClientStack, Clock: embedded_time::Clock, Broker: minimq
         let filters = [TopicFilter::new(topic)];
         self.mqtt_client.client().subscribe(&filters, &[])
     }
+
+    /// Direct MQTT publish bypassing uProtocol entirely
+    pub fn publish_raw(&mut self, topic: &str, payload: &[u8]) -> Result<(), minimq::PubError<<TcpStack as TcpClientStack>::Error, ()>> {
+        self.mqtt_client
+            .client()
+            .publish(Publication::new(topic, payload))
+    }
 }
 
 impl<TcpStack, Clock, Broker> LocalUTransport for MiniMqBasedTransport<'_, TcpStack, Clock, Broker>
