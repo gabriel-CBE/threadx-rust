@@ -22,15 +22,13 @@ use static_cell::StaticCell;
 use threadx_app::minimqtransport::MiniMqBasedTransport;
 use threadx_app::network::ThreadxTcpWifiNetwork;
 
-use threadx_app::uprotocol_v1::UMessage;
-use threadx_app::utransport::LocalUTransport;
+
 use threadx_rs::allocator::ThreadXAllocator;
 use threadx_rs::event_flags::GetOption::*;
 use threadx_rs::event_flags::{EventFlagsGroup, EventFlagsGroupHandle};
 
 use threadx_rs::WaitOption::*;
-use threadx_rs::WaitOption;
-use threadx_rs::executor::Executor;
+
 use threadx_rs::mutex::Mutex;
 use threadx_rs::queue::{Queue, QueueReceiver, QueueSender};
 use threadx_rs::thread::{self, sleep};
@@ -208,7 +206,7 @@ fn do_measurement(
         let deg = i32::from(hts221.temperature_x8(&mut i2c).unwrap());
         let _ = snd.send(Event::TemperatureMeasurement(deg), WaitForever);
         defmt::println!("Current temperature: {}", deg);
-        let _ = sleep(Duration::from_secs(5));
+        let _ = sleep(Duration::from_secs(30));
     }
 }
 
@@ -317,25 +315,33 @@ where
 }
 
 /// Handles publishing a message to an MQTT topic.
-fn handle_publish<'buf, Clock, Broker>(
+fn handle_mqtt_publish<'buf, Clock, Broker>(
     transport: &mut MiniMqBasedTransport<'buf, ThreadxTcpWifiNetwork, Clock, Broker>,
     topic: &str,
     message: &[u8],
-    executor: &Executor,
 )
 where
     Clock: minimq::embedded_time::Clock,
     Broker: minimq::Broker,
 {
     if transport.is_connected() {
-        let mut umessage = UMessage::default();
-        umessage.payload.replace(message.to_vec());
-        let _res = executor.block_on(transport.send(topic, umessage));
+        // Publish message via MQTT
+        match transport.publish_raw(topic, message) {
+            Ok(_) => {
+                let msg_str = core::str::from_utf8(message).unwrap_or("<invalid>");
+                defmt::println!("Published to {}: {}", topic, msg_str);
+            }
+            Err(e) => {
+                defmt::println!("MQTT publish failed: {}", defmt::Debug2Format(&e));
+            }
+        }
+    } else {
+        defmt::println!("MQTT not connected");
     }
 }
 
 /// Handles subscribing to an MQTT topic and processes received messages with a callback.
-fn handle_subscribe<'buf, Clock, Broker, F>(
+fn handle_mqtt_subscribe<'buf, Clock, Broker, F>(
     transport: &mut MiniMqBasedTransport<'buf, ThreadxTcpWifiNetwork, Clock, Broker>,
     topic: &str,
     subscribed: &mut bool,
@@ -367,7 +373,7 @@ where
 ///     - Not being able to obtain the display lock
 ///     - Not being able to connect to WiFi or other network initialization issues
 pub fn do_network(
-    recv: QueueReceiver<Event>,
+    _recv: QueueReceiver<Event>,
     evt_handle: EventFlagsGroupHandle,
     display: &Mutex<Option<DisplayType<I2CBus>>>,
     btn_a: Option<board::InputButton<'A', 4>>,
@@ -377,8 +383,8 @@ pub fn do_network(
 
     let broker_ip = core::net::Ipv4Addr::new(5, 196, 78, 28);
 
-    let sub_topic = "threadx/A/0/2/8001";
-    let pub_topic = "threadx/A/0/2/8001";
+    let sub_topic = "vehicle/parameters";
+    let pub_topic_params = "vehicle/parameters";
 
     let mut display_guard = display.lock(WaitForever).unwrap();
         
@@ -412,8 +418,6 @@ pub fn do_network(
         }
     };
 
-    let executor = Executor::new();
-
     evt_handle
         .publish(FlagEvents::WifiConnected as u32)
         .unwrap();
@@ -428,58 +432,78 @@ pub fn do_network(
     let mut last_msg_received = heapless::String::<64>::new();
     let mut last_msg_sent = heapless::String::<64>::new();
     
-    // btn_a is now owned and passed in
-
-    let mut last_engage_value = 0;
-    let mut sent_zero = false;
+    // Store last received vehicle parameters JSON and cruise control state
+    let mut last_vehicle_params = heapless::String::<1024>::new();
+    let mut cruise_control_active = false;
+    let mut last_button_state = true; // Button is active low
     loop {
         // Lock the display mutex each loop iteration
         let mut display_guard = display.lock(WaitForever).unwrap();
-        if let Some(ref mut actual_display) = *display_guard {
-            handle_subscribe(
+        if let Some(ref mut _actual_display) = *display_guard {
+            handle_mqtt_subscribe(
                 &mut transport,
                 sub_topic,
                 &mut subscribed,
-                |_, payload| {
-                    defmt::println!("Received on {}: {:?}", sub_topic, payload);
+                |recv_topic, payload| {
                     let msg = core::str::from_utf8(payload).unwrap_or("<invalid>");
+                    defmt::println!("Received from {}: {}", recv_topic, msg);
+                    
+                    // Store the complete JSON for later use
+                    last_vehicle_params.clear();
+                    let _ = write!(last_vehicle_params, "{}", msg);
+                    
+                    // Simple check if CruiseControl is true
+                    cruise_control_active = msg.contains("\"CruiseControl\": true");
+                    
                     last_msg_received.clear();
-                    let _ = write!(last_msg_received, "{}", msg);
-                    // Parse value as integer and only accept 0 or 1
-                    match msg.trim().parse::<i32>() {
-                        Ok(val) if val == 0 || val == 1 => {
-                            last_engage_value = val;
-                        }
-                        Ok(other) => {
-                            last_engage_value = 0;
-                            defmt::println!("Received invalid engage value: {}", other);
-                        }
-                        Err(_) => {
-                            last_engage_value = 0;
-                            defmt::println!("Received non-integer engage value: {}", msg);
-                        }
-                    }
+                    let _ = write!(last_msg_received, "CC:{}", if cruise_control_active { "ON" } else { "OFF" });
+                    
                     msg_received_counter += 1;
                 }
             );
         }
         transport.poll();
 
-        // Check button press and publish if needed
+        // Check button press for cruise control override
         if let Some(ref btn) = btn_a {
-            // Only send 0 when button is pressed (active low)
-            if btn.is_low() && last_engage_value == 1 && !sent_zero {
-                let msg_vec = b"0";
-                last_msg_sent.clear();
-                let _ = write!(last_msg_sent, "{}", "0");
-                handle_publish(&mut transport, pub_topic, msg_vec, &executor);
-                defmt::println!("Published to {}: {:?}", pub_topic, msg_vec);
-                msg_sent_counter += 1;
-                sent_zero = true;
-            }
-            // Reset sent_zero if topic value changes to 0 or button is released
-            if sent_zero && btn.is_high() {
-                sent_zero = false;
+            let current_button_state = btn.is_high(); // true = not pressed, false = pressed (active low)
+            
+            if current_button_state != last_button_state {
+                // Button state changed
+                if !current_button_state {
+                    // Button was just pressed (went from high to low)
+                    defmt::println!("Button pressed!");
+                    
+                    if cruise_control_active && !last_vehicle_params.is_empty() {
+                        defmt::println!("Cruise Control Override: Disabling CC and publishing modified parameters");
+                        
+                        // Create a new string buffer for the modified JSON
+                        let mut modified_json = heapless::String::<1024>::new();
+                        
+                        // Replace "CruiseControl": true with "CruiseControl": false
+                        let original_str = last_vehicle_params.as_str();
+                        if let Some(pos) = original_str.find("\"CruiseControl\": true") {
+                            let before = &original_str[..pos];
+                            let after = &original_str[pos + 21..]; // Skip "CruiseControl": true (21 chars)
+                            let _ = write!(modified_json, "{}\"CruiseControl\": false{}", before, after);
+                        } else {
+                            // Fallback: use original if cruise control not found
+                            let _ = write!(modified_json, "{}", original_str);
+                        }
+                        
+                        // Publish the modified JSON via direct MQTT
+                        handle_mqtt_publish(&mut transport, pub_topic_params, modified_json.as_bytes());
+                        
+                        msg_sent_counter += 1;
+                        last_msg_sent.clear();
+                        let _ = write!(last_msg_sent, "CC:OFF");
+                    } else {
+                        // Button pressed but cruise control not active or no vehicle data
+                        last_msg_sent.clear();
+                        let _ = write!(last_msg_sent, "BTN");
+                    }
+                }
+                last_button_state = current_button_state;
             }
         }
 

@@ -9,9 +9,69 @@ Compared to the original we did:
 - Implement embedded-nal interface for NetX/Wiced Wifi
 - Async interface for buttons
 
-## Quickstart
+# Prerequisites and Tool Installation
 
-### Executor example
+**All steps below are for Linux.**
+
+## Update Linux
+
+```sh
+sudo apt update
+sudo apt upgrade
+```
+
+## Install Arm GCC
+
+```sh
+sudo apt install gcc-arm-none-eabi
+sudo apt install build-essential
+```
+
+## Install pkgconf
+
+```sh
+sudo apt install pkgconf
+```
+
+## Install Rust tools
+
+```sh
+curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+```
+
+*Close your Linux shell and open it again to update environment variables.*
+
+## Install dependencies
+
+1. **flip-link**:
+	```sh
+	cargo install flip-link
+	```
+
+2. **Rust target** (for MXAZ3166):
+	```sh
+	rustup target add thumbv7m-none-eabi
+	rustup target add thumbv7em-none-eabihf
+	```
+
+3. **Other dependencies**:
+	```sh
+	sudo apt install ninja-build libclang-dev cmake usbutils
+	```
+
+4. **Probe-RS to flash the board**:
+	```sh
+	sudo apt-get install libudev-dev
+	cargo install probe-rs-tools
+	```
+
+## Allow access to debug probe-rs-tools
+
+Follow instructions from [probe.rs Linux udev rules](https://probe.rs/docs/getting-started/probe-setup/#linux-udev-rules)
+
+# Quickstart
+
+## Executor example
 
 The `executor.rs`example switches between 2 screens via tha A button and shows either a welcome screen or the actual temperature. It is a demonstration of the async executor based on ThreadX EventFlags.
 
@@ -19,7 +79,17 @@ Goto `threadx-app/cross/app` and run:
 
 `cargo run --release --target thumbv7em-none-eabihf --bin executor`
 
-### Network example
+## Network example (raw mqtt)
+
+This example connects to a WiFi Network and to an MQTT5 broker. It subscribes to the `vehicle/parameters` topic and implements a cruise control override system - when cruise control is enabled and the user presses the button, it will disable cruise control by publishing the modified vehicle parameters back to the topic.
+
+In the `network_raw_mqtt.rs` example adapt the SSID, WLAN-Passwort and the MQTT settings accordingly.  
+
+Goto `threadx-app/cross/app` and run:
+
+`cargo run --release --target thumbv7em-none-eabihf --bin network_raw_mqtt`
+
+## Network example
 
 This examples connects to a WiFi Network and to an MQTT5 broker and regularly publishes the current temperature as uMessage (see: Link to uProtocol). 
 
