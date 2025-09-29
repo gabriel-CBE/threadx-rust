@@ -453,7 +453,7 @@ pub fn do_network(
                     let _ = write!(last_vehicle_params, "{}", msg);
                     
                     // Simple check if CruiseControl is true
-                    cruise_control_active = msg.contains("\"CruiseControl\": true");
+                    cruise_control_active = msg.contains("\"CruiseControl\":true");
                     
                     last_msg_received.clear();
                     let _ = write!(last_msg_received, "CC:{}", if cruise_control_active { "ON" } else { "OFF" });
@@ -480,12 +480,12 @@ pub fn do_network(
                         // Create a new string buffer for the modified JSON
                         let mut modified_json = heapless::String::<1024>::new();
                         
-                        // Replace "CruiseControl": true with "CruiseControl": false
+                        // Replace "CruiseControl":true with "CruiseControl":false
                         let original_str = last_vehicle_params.as_str();
-                        if let Some(pos) = original_str.find("\"CruiseControl\": true") {
+                        if let Some(pos) = original_str.find("\"CruiseControl\":true") {
                             let before = &original_str[..pos];
-                            let after = &original_str[pos + 21..]; // Skip "CruiseControl": true (21 chars)
-                            let _ = write!(modified_json, "{}\"CruiseControl\": false{}", before, after);
+                            let after = &original_str[pos + 20..]; // Skip "CruiseControl":true (20 chars)
+                            let _ = write!(modified_json, "{}\"CruiseControl\":false{}", before, after);
                         } else {
                             // Fallback: use original if cruise control not found
                             let _ = write!(modified_json, "{}", original_str);
