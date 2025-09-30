@@ -2,17 +2,20 @@
 use core::ffi::c_void;
 use core::future::Future;
 use core::task::Waker;
+use core::time::Duration;
 use core::{arch::asm, cell::RefCell};
 
 use cortex_m::interrupt::Mutex;
 use cortex_m::peripheral::syst::SystClkSource;
 use ssd1306::prelude::I2CInterface;
-use stm32f4xx_hal::gpio::{ExtiPin, Input, Pin};
+use stm32f4xx_hal::gpio::{AF2, Alternate, ExtiPin, Input, Output, Pin, gpioa, gpiob};
 
 use stm32f4xx_hal::interrupt;
-use stm32f4xx_hal::pac::{EXTI, NVIC};
+use stm32f4xx_hal::pac::{EXTI, NVIC, TIM2, TIM3};
+use stm32f4xx_hal::prelude::*;
 use stm32f4xx_hal::syscfg::SysCfgExt;
 use stm32f4xx_hal::time::Hertz;
+use stm32f4xx_hal::timer::{PwmChannel, PwmExt, PwmManager, pwm};
 use stm32f4xx_hal::{
     gpio::GpioExt,
     i2c::{I2c, Mode},
@@ -59,6 +62,9 @@ where
     pub i2c_bus: Option<I2CBus>,
     pub btn_a: Option<InputButton<'A', 4>>,
     pub btn_b: Option<InputButton<'A', 10>>,
+    pub pwm_red: PwmChannel<TIM3, 0>,
+    pub pwm_green: PwmChannel<TIM3, 1>,
+    pub pwm_blue: PwmChannel<TIM2, 1>,
 }
 
 #[derive(Clone, Copy)]
@@ -153,6 +159,37 @@ impl LowLevelInit for BoardMxAz3166<I2CBus> {
         let scl = gpiob.pb8;
         let sda = gpiob.pb9;
 
+        // RGB LED PWM Konfiguration für AZ3166 (STM32F412)
+        // Pin-Zuordnung:
+        // - Rot:  PB4 -> TIM3_CH1 (AF2)
+        // - Blau: PB3 -> TIM2_CH2 (AF1)
+        // - Grün: PB5 -> TIM3_CH2 (AF2)
+
+        // GPIO Pins konfigurieren mit korrekten Alternate Functions
+        let blue_pin = gpiob.pb3.into_alternate::<1>(); // TIM2_CH2 (AF1)
+        let red_pin = gpiob.pb4.into_alternate::<2>(); // TIM3_CH1 (AF2)
+        let green_pin = gpiob.pb5.into_alternate::<2>(); // TIM3_CH2 (AF2)
+
+        // TIM2 für Blau (PB3)
+        let (_, (_, pwm_blue_ch, _, _)) = p.TIM2.pwm_us(100.micros(), &clocks);
+        let mut pwm_blue = pwm_blue_ch.with(blue_pin);
+        
+        // TIM3 für Rot und Grün (PB4, PB5)
+        let (_, (pwm_red, pwm_green, _, _)) = p.TIM3.pwm_us(100.micros(), &clocks);
+        let mut pwm_red = pwm_red.with(red_pin);
+        let mut pwm_green = pwm_green.with(green_pin);
+
+        // PWM-Kanäle aktivieren
+        pwm_red.enable();
+        pwm_green.enable();
+        pwm_blue.enable();
+
+        // Beispiel: Duty Cycle setzen (0-100%)
+        let max_duty = pwm_red.get_max_duty();
+        pwm_red.set_duty(max_duty / 2); // 50% Helligkeit für Rot
+        pwm_green.set_duty(max_duty / 4); // 25% Helligkeit für Grün
+        pwm_blue.set_duty(max_duty * 3 / 4); // 75% Helligkeit für Blau
+
         let i2c = I2c::new(p.I2C1, (scl, sda), Mode::standard(Hertz::kHz(400)), &clocks);
         cortex_m::interrupt::free(|cs| SHARED_BUS.borrow(cs).replace(Some(i2c)));
         let mut bus = I2CBus { i2c: &SHARED_BUS };
@@ -190,6 +227,9 @@ impl LowLevelInit for BoardMxAz3166<I2CBus> {
             i2c_bus: Some(bus),
             btn_a: Some(InputButton::new(button_a)),
             btn_b: Some(InputButton::new(button_b)),
+            pwm_red,
+            pwm_green,
+            pwm_blue,
         }
     }
 }
