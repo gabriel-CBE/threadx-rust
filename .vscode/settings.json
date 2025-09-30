@@ -2,5 +2,6 @@
 	"rust-analyzer.check.allTargets": false,
 	"rust-analyzer.linkedProjects": [
         	"Cargo.toml"
-      ]
+	],
+	"cmake.sourceDirectory": "/home/gabriel-cb/dev/2025_sdv_hackathon/threadx/threadx-rust/netx-sys/shared/netxduo/ports/cortex_m3/gnu"
 }

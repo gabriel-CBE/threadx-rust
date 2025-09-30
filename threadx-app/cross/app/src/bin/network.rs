@@ -372,8 +372,8 @@ pub fn do_network(
     display: &Mutex<Option<DisplayType<I2CBus>>>,
     btn_a: Option<board::InputButton<'A', 4>>,
 ) -> ! {
-    let ssid = "__WIFI_SSID__";
-    let password = "__WIFI_PASSWORD__";
+    let ssid = "SDV_Chapter3-Team2";
+    let password = "EclipseSDVC3";
 
     let broker_ip = core::net::Ipv4Addr::new(5, 196, 78, 28);
 
