@@ -62,9 +62,7 @@ where
     pub i2c_bus: Option<I2CBus>,
     pub btn_a: Option<InputButton<'A', 4>>,
     pub btn_b: Option<InputButton<'A', 10>>,
-    pub pwm_red: PwmChannel<TIM3, 0>,
-    pub pwm_green: PwmChannel<TIM3, 1>,
-    pub pwm_blue: PwmChannel<TIM2, 1>,
+    pub rgb_led: RgbLed,
 }
 
 #[derive(Clone, Copy)]
@@ -159,36 +157,24 @@ impl LowLevelInit for BoardMxAz3166<I2CBus> {
         let scl = gpiob.pb8;
         let sda = gpiob.pb9;
 
-        // RGB LED PWM Konfiguration für AZ3166 (STM32F412)
-        // Pin-Zuordnung:
-        // - Rot:  PB4 -> TIM3_CH1 (AF2)
-        // - Blau: PB3 -> TIM2_CH2 (AF1)
-        // - Grün: PB5 -> TIM3_CH2 (AF2)
+        // GPIO Pins konfigurieren
+        let green_pin = gpiob.pb3.into_alternate::<1>(); // PB3 = Green (TIM2_CH2)
+        let red_pin = gpiob.pb4.into_alternate::<2>(); // PB4 = Red (TIM3_CH1)
+        let blue_pin = gpiob.pb5.into_alternate::<2>(); // PB5 = Blue (TIM3_CH2)
 
-        // GPIO Pins konfigurieren mit korrekten Alternate Functions
-        let blue_pin = gpiob.pb3.into_alternate::<1>(); // TIM2_CH2 (AF1)
-        let red_pin = gpiob.pb4.into_alternate::<2>(); // TIM3_CH1 (AF2)
-        let green_pin = gpiob.pb5.into_alternate::<2>(); // TIM3_CH2 (AF2)
+        // TIM2 für grün
+        let (_, (_, pwm_green_ch, _, _)) = p.TIM2.pwm_us(100.micros(), &clocks);
+        let pwm_green = pwm_green_ch.with(green_pin);
 
-        // TIM2 für Blau (PB3)
-        let (_, (_, pwm_blue_ch, _, _)) = p.TIM2.pwm_us(100.micros(), &clocks);
-        let mut pwm_blue = pwm_blue_ch.with(blue_pin);
-        
-        // TIM3 für Rot und Grün (PB4, PB5)
-        let (_, (pwm_red, pwm_green, _, _)) = p.TIM3.pwm_us(100.micros(), &clocks);
-        let mut pwm_red = pwm_red.with(red_pin);
-        let mut pwm_green = pwm_green.with(green_pin);
+        // TIM3 für Rot und Blau
+        let (_, (pwm_red_ch, pwm_blue_ch, _, _)) = p.TIM3.pwm_us(100.micros(), &clocks);
+        let pwm_red = pwm_red_ch.with(red_pin);
+        let pwm_blue = pwm_blue_ch.with(blue_pin);
 
-        // PWM-Kanäle aktivieren
-        pwm_red.enable();
-        pwm_green.enable();
-        pwm_blue.enable();
+        // RGB LED erstellen mit korrigierter Reihenfolge
+        let mut rgb_led = RgbLed::new(pwm_red, pwm_blue, pwm_green);
 
-        // Beispiel: Duty Cycle setzen (0-100%)
-        let max_duty = pwm_red.get_max_duty();
-        pwm_red.set_duty(max_duty / 2); // 50% Helligkeit für Rot
-        pwm_green.set_duty(max_duty / 4); // 25% Helligkeit für Grün
-        pwm_blue.set_duty(max_duty * 3 / 4); // 75% Helligkeit für Blau
+        rgb_led.set_color(0, 100, 0);
 
         let i2c = I2c::new(p.I2C1, (scl, sda), Mode::standard(Hertz::kHz(400)), &clocks);
         cortex_m::interrupt::free(|cs| SHARED_BUS.borrow(cs).replace(Some(i2c)));
@@ -227,9 +213,7 @@ impl LowLevelInit for BoardMxAz3166<I2CBus> {
             i2c_bus: Some(bus),
             btn_a: Some(InputButton::new(button_a)),
             btn_b: Some(InputButton::new(button_b)),
-            pwm_red,
-            pwm_green,
-            pwm_blue,
+            rgb_led,
         }
     }
 }
@@ -317,6 +301,97 @@ impl<const P: char, const N: u8> Future for InputButtonFuture<'_, P, N> {
 pub enum BUTTONS {
     ButtonA = 4,
     ButtonB = 10,
+}
+
+pub struct RgbLed {
+    red: PwmChannel<TIM3, 0>,   // PB4 - TIM3_CH1
+    blue: PwmChannel<TIM3, 1>, // PB5 - TIM3_CH2
+    green: PwmChannel<TIM2, 1>,  // PB3 - TIM2_CH2
+}
+
+impl RgbLed {
+    /// Erstellt eine neue RGB LED Instanz
+    pub fn new(
+        red: PwmChannel<TIM3, 0>,
+        blue: PwmChannel<TIM3, 1>,
+        green: PwmChannel<TIM2, 1>,
+    ) -> Self {
+        let mut led = Self { red, blue, green };
+
+        // PWM-Kanäle aktivieren
+        led.red.enable();
+        led.green.enable();
+        led.blue.enable();
+
+        led
+    }
+
+    /// Setzt die RGB-Farbe (Werte von 0 bis 100 für Prozent)
+    pub fn set_color(&mut self, red: u8, blue: u8, green: u8) {
+        let max_duty_red = self.red.get_max_duty();
+        let max_duty_green = self.green.get_max_duty();
+        let max_duty_blue = self.blue.get_max_duty();
+
+        self.red
+            .set_duty((max_duty_red as u32 * red as u32 / 100) as u16);
+        self.green
+            .set_duty((max_duty_green as u32 * green as u32 / 100) as u16);
+        self.blue
+            .set_duty((max_duty_blue as u32 * blue as u32 / 100) as u16);
+    }
+
+    /// Setzt individuelle Helligkeit pro Kanal (0-100%)
+    pub fn set_red(&mut self, brightness: u8) {
+        let max_duty = self.red.get_max_duty();
+        self.red
+            .set_duty((max_duty as u32 * brightness as u32 / 100) as u16);
+    }
+
+    pub fn set_green(&mut self, brightness: u8) {
+        let max_duty = self.green.get_max_duty();
+        self.green
+            .set_duty((max_duty as u32 * brightness as u32 / 100) as u16);
+    }
+
+    pub fn set_blue(&mut self, brightness: u8) {
+        let max_duty = self.blue.get_max_duty();
+        self.blue
+            .set_duty((max_duty as u32 * brightness as u32 / 100) as u16);
+    }
+
+    /// Schaltet die LED aus
+    pub fn off(&mut self) {
+        self.set_color(0, 0, 0);
+    }
+
+    /// Vordefinierte Farben
+    pub fn set_white(&mut self) {
+        self.set_color(100, 100, 100);
+    }
+
+    pub fn set_red_only(&mut self) {
+        self.set_color(100, 0, 0);
+    }
+
+    pub fn set_green_only(&mut self) {
+        self.set_color(0, 100, 0);
+    }
+
+    pub fn set_blue_only(&mut self) {
+        self.set_color(0, 0, 100);
+    }
+
+    pub fn set_yellow(&mut self) {
+        self.set_color(100, 100, 0);
+    }
+
+    pub fn set_cyan(&mut self) {
+        self.set_color(0, 100, 100);
+    }
+
+    pub fn set_magenta(&mut self) {
+        self.set_color(100, 0, 100);
+    }
 }
 
 /// .
