@@ -1,6 +1,8 @@
 #![no_std]
+use core::cmp::min;
 use core::ffi::c_void;
 use core::future::Future;
+use core::str::FromStr;
 use core::task::Waker;
 use core::{arch::asm, cell::RefCell};
 
@@ -61,7 +63,7 @@ where
     pub i2c_bus: Option<I2CBus>,
     pub btn_a: Option<InputButton<'A', 4>>,
     pub btn_b: Option<InputButton<'A', 10>>,
-    pub rgb_led: RgbLed,
+    pub rgb_led: Option<RgbLed>,
 }
 
 #[derive(Clone, Copy)]
@@ -212,7 +214,7 @@ impl LowLevelInit for BoardMxAz3166<I2CBus> {
             i2c_bus: Some(bus),
             btn_a: Some(InputButton::new(button_a)),
             btn_b: Some(InputButton::new(button_b)),
-            rgb_led,
+            rgb_led: Some(rgb_led),
         }
     }
 }
@@ -302,10 +304,17 @@ pub enum BUTTONS {
     ButtonB = 10,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum ColorState {
+    Red,
+    Green,
+}
+
 pub struct RgbLed {
     red: PwmChannel<TIM3, 0>,   // PB4 - TIM3_CH1
-    blue: PwmChannel<TIM3, 1>, // PB5 - TIM3_CH2
-    green: PwmChannel<TIM2, 1>,  // PB3 - TIM2_CH2
+    blue: PwmChannel<TIM3, 1>,  // PB5 - TIM3_CH2
+    green: PwmChannel<TIM2, 1>, // PB3 - TIM2_CH2
+    color_state: ColorState,
 }
 
 impl RgbLed {
@@ -315,7 +324,12 @@ impl RgbLed {
         blue: PwmChannel<TIM3, 1>,
         green: PwmChannel<TIM2, 1>,
     ) -> Self {
-        let mut led = Self { red, blue, green };
+        let mut led = Self {
+            red,
+            blue,
+            green,
+            color_state: ColorState::Green,
+        };
 
         // PWM-Kanäle aktivieren
         led.red.enable();
@@ -337,6 +351,45 @@ impl RgbLed {
             .set_duty((max_duty_green as u32 * green as u32 / 100) as u16);
         self.blue
             .set_duty((max_duty_blue as u32 * blue as u32 / 100) as u16);
+    }
+
+    pub fn toggle_red_green(&mut self) {
+        match self.color_state {
+            ColorState::Red => {
+                // Wechsle zu Grün
+                self.set_color(0, 0, 100);
+                self.color_state = ColorState::Green;
+            }
+            ColorState::Green => {
+                // Wechsle zu Rot
+                self.set_color(100, 0, 0);
+                self.color_state = ColorState::Red;
+            }
+        }
+    }
+
+    /// Gibt den aktuellen Farbzustand zurück
+    pub fn get_color_state(&self) -> ColorState {
+        self.color_state
+    }
+
+    /// Setzt den Farbzustand explizit und aktiviert die entsprechende Farbe
+    pub fn set_color_state(&mut self, state: ColorState) {
+        self.color_state = state;
+        match state {
+            ColorState::Red => self.set_color(100, 0, 0),
+            ColorState::Green => self.set_color(0, 0, 100),
+        }
+    }
+
+    /// Überprüft, ob die LED aktuell rot ist
+    pub fn is_red_active(&self) -> bool {
+        self.color_state == ColorState::Red
+    }
+
+    /// Überprüft, ob die LED aktuell grün ist
+    pub fn is_green_active(&self) -> bool {
+        self.color_state == ColorState::Green
     }
 
     /// Setzt individuelle Helligkeit pro Kanal (0-100%)
@@ -391,6 +444,89 @@ impl RgbLed {
     pub fn set_magenta(&mut self) {
         self.set_color(100, 0, 100);
     }
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct RgbColor {
+    pub red: u8,
+    pub green: u8,
+    pub blue: u8,
+}
+
+impl RgbColor {
+    /// Parsed einen RGB-String im Format "0xRRGGBB" oder als Dezimalzahl
+    /// Format: 0x 00 (padding) 00 (red) 00 (green) 00 (blue)
+    pub fn from_mqtt_string(s: &str) -> Result<Self, ParseError> {
+        let s = s.trim();
+
+        if s.is_empty() {
+            return Err(ParseError::InvalidFormat);
+        }
+
+        let len = s.len();
+
+        let blue_start = len.saturating_sub(3);
+        let blue_str = &s[blue_start..];
+        let blue: u8 = min(
+            blue_str
+                .parse::<u8>()
+                .map_err(|_| ParseError::InvalidFormat)?,
+            255,
+        );
+
+        let green_end = blue_start;
+        let green_start = green_end.saturating_sub(3);
+        let green_str = &s[green_start..green_end];
+        let green: u8 = min(
+            if green_str.is_empty() {
+                0
+            } else {
+                green_str
+                    .parse::<u8>()
+                    .map_err(|_| ParseError::InvalidFormat)?
+            },
+            255,
+        );
+
+        // Red: Rest
+        let red_str = &s[..green_start];
+        let red: u8 = min(
+            if red_str.is_empty() {
+                0
+            } else {
+                red_str
+                    .parse::<u8>()
+                    .map_err(|_| ParseError::InvalidFormat)?
+            },
+            255,
+        );
+
+        Ok(RgbColor { red, green, blue })
+    }
+
+    /// Konvertiert RGB zu Prozent-Werten (0-100) für PWM
+    pub fn to_percent(&self) -> (u8, u8, u8) {
+        (
+            (self.red as u16 * 100 / 255) as u8,
+            (self.green as u16 * 100 / 255) as u8,
+            (self.blue as u16 * 100 / 255) as u8,
+        )
+    }
+
+    /// Erstellt aus direkten RGB-Werten (0-255)
+    pub fn new(red: u8, green: u8, blue: u8) -> Self {
+        Self { red, green, blue }
+    }
+
+    /// Schwarze Farbe (LED aus)
+    pub fn black() -> Self {
+        Self::new(0, 0, 0)
+    }
+}
+
+#[derive(Debug)]
+pub enum ParseError {
+    InvalidFormat,
 }
 
 /// .
