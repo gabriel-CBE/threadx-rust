@@ -2,20 +2,19 @@
 use core::ffi::c_void;
 use core::future::Future;
 use core::task::Waker;
-use core::time::Duration;
 use core::{arch::asm, cell::RefCell};
 
 use cortex_m::interrupt::Mutex;
 use cortex_m::peripheral::syst::SystClkSource;
 use ssd1306::prelude::I2CInterface;
-use stm32f4xx_hal::gpio::{AF2, Alternate, ExtiPin, Input, Output, Pin, gpioa, gpiob};
+use stm32f4xx_hal::gpio::{ExtiPin, Input, Pin};
 
 use stm32f4xx_hal::interrupt;
 use stm32f4xx_hal::pac::{EXTI, NVIC, TIM2, TIM3};
 use stm32f4xx_hal::prelude::*;
 use stm32f4xx_hal::syscfg::SysCfgExt;
 use stm32f4xx_hal::time::Hertz;
-use stm32f4xx_hal::timer::{PwmChannel, PwmExt, PwmManager, pwm};
+use stm32f4xx_hal::timer::{PwmChannel, PwmExt};
 use stm32f4xx_hal::{
     gpio::GpioExt,
     i2c::{I2c, Mode},
@@ -174,7 +173,7 @@ impl LowLevelInit for BoardMxAz3166<I2CBus> {
         // RGB LED erstellen mit korrigierter Reihenfolge
         let mut rgb_led = RgbLed::new(pwm_red, pwm_blue, pwm_green);
 
-        rgb_led.set_color(0, 100, 0);
+        rgb_led.set_color(75, 0, 10);
 
         let i2c = I2c::new(p.I2C1, (scl, sda), Mode::standard(Hertz::kHz(400)), &clocks);
         cortex_m::interrupt::free(|cs| SHARED_BUS.borrow(cs).replace(Some(i2c)));
