@@ -459,47 +459,14 @@ impl RgbColor {
     pub fn from_mqtt_string(s: &str) -> Result<Self, ParseError> {
         let s = s.trim();
 
-        if s.is_empty() {
-            return Err(ParseError::InvalidFormat);
-        }
+        // Parse Dezimalstring in u32
+        let value: u32 = s.parse().map_err(|_| ParseError::InvalidFormat)?;
 
-        let len = s.len();
-
-        let blue_start = len.saturating_sub(3);
-        let blue_str = &s[blue_start..];
-        let blue: u8 = min(
-            blue_str
-                .parse::<u8>()
-                .map_err(|_| ParseError::InvalidFormat)?,
-            255,
-        );
-
-        let green_end = blue_start;
-        let green_start = green_end.saturating_sub(3);
-        let green_str = &s[green_start..green_end];
-        let green: u8 = min(
-            if green_str.is_empty() {
-                0
-            } else {
-                green_str
-                    .parse::<u8>()
-                    .map_err(|_| ParseError::InvalidFormat)?
-            },
-            255,
-        );
-
-        // Red: Rest
-        let red_str = &s[..green_start];
-        let red: u8 = min(
-            if red_str.is_empty() {
-                0
-            } else {
-                red_str
-                    .parse::<u8>()
-                    .map_err(|_| ParseError::InvalidFormat)?
-            },
-            255,
-        );
+        // Wandeln in Hex & Extrahieren von RGB
+        // Format: 0x00RRGGBB
+        let red = ((value >> 16) & 0xFF) as u8;
+        let green = ((value >> 8) & 0xFF) as u8;
+        let blue = (value & 0xFF) as u8;
 
         Ok(RgbColor { red, green, blue })
     }

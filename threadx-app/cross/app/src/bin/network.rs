@@ -220,7 +220,7 @@ fn do_measurement(
     loop {
         let deg = i32::from(hts221.temperature_x8(&mut i2c).unwrap());
         let _ = snd.send(Event::TemperatureMeasurement(deg), WaitForever);
-        defmt::println!("Current temperature: {}", deg);
+        // defmt::println!("Current temperature: {}", deg);
         let _ = sleep(Duration::from_millis(1000));
     }
 }
@@ -393,8 +393,8 @@ pub fn do_network(
     let password = "EclipseSDVC3";
 
     // 192.168.43.241
-    // let broker_ip: core::net::Ipv4Addr = core::net::Ipv4Addr::new(192, 168, 43, 241);
-    let broker_ip = core::net::Ipv4Addr::new(5, 196, 78, 28);
+    let broker_ip: core::net::Ipv4Addr = core::net::Ipv4Addr::new(192, 168, 43, 241);
+    // let broker_ip = core::net::Ipv4Addr::new(5, 196, 78, 28);
 
     let sub_topic = "compute/color";
     let pub_topic = "mcu/temperature";
@@ -455,9 +455,9 @@ pub fn do_network(
     let mut last_engage_value = 0;
     let mut sent_zero = false;
 
-    let mut red_value = 0;
-    let mut green_value = 0;
-    let mut blue_value = 0;
+    // let mut red_value = 0;
+    // let mut green_value = 0;
+    // let mut blue_value = 0;
 
     loop {
         // Lock the display mutex each loop iteration
@@ -465,19 +465,19 @@ pub fn do_network(
         if let Some(ref mut actual_display) = *display_guard {
             handle_subscribe(&mut transport, sub_topic, &mut subscribed, |_, payload| {
                 let msg = core::str::from_utf8(payload).unwrap_or("<invalid>");
-                let msg = "255000";
+                // let msg = "255000";
                 defmt::println!("Received {}", msg);
                 match RgbColor::from_mqtt_string(msg) {
                     Ok(color) => {
-                        defmt::info!(
+                        defmt::println!(
                             "Parsed RGB: R={}, G={}, B={}",
                             color.red,
                             color.green,
                             color.blue
                         );
 
-                        let (r, g, b) = color.to_percent();
-                        rgb_led.set_color(color.red, color.blue, color.green);
+                        let (red, green, blue) = color.to_percent();
+                        rgb_led.set_color(red, blue, green);
                     }
                     Err(_) => {
                         defmt::error!("Failed to parse RGB value: {}", payload);
@@ -513,7 +513,7 @@ pub fn do_network(
                 let _ = write!(last_msg_sent, "{}", temp_str);
 
                 handle_publish(&mut transport, pub_topic, &temperature_msg, &executor);
-                defmt::println!("Published temperature to {}: {:?}", pub_topic, msg_vec);
+                defmt::println!("Published temperature to {}: {}", pub_topic, msg_vec);
 
                 msg_sent_counter += 1;
             }
@@ -538,71 +538,73 @@ pub fn do_network(
         //     }
         // }
 
-        // For testing
+        // ********** For testing - START **********
 
-        let mut r_buf = Buffer::new();
-        let mut g_buf = Buffer::new();
-        let mut b_buf = Buffer::new();
+        // let mut r_buf = Buffer::new();
+        // let mut g_buf = Buffer::new();
+        // let mut b_buf = Buffer::new();
 
-        let r_str = r_buf.format(red_value);
-        let g_str = g_buf.format(green_value);
-        let b_str = b_buf.format(blue_value);
+        // let r_str = r_buf.format(red_value);
+        // let g_str = g_buf.format(green_value);
+        // let b_str = b_buf.format(blue_value);
 
-        let mut out = [0u8; 9]; // genau 9 Zeichen: 3+3+3
-        let mut len = 0;
+        // let mut out = [0u8; 9]; // genau 9 Zeichen: 3+3+3
+        // let mut len = 0;
 
-        // helper closure für 3-stellig mit führenden Nullen
-        let mut append_padded = |s: &str, buf: &mut [u8], len: &mut usize| {
-            let missing = 3 - s.len();
-            for _ in 0..missing {
-                buf[*len] = b'0';
-                *len += 1;
-            }
-            buf[*len..*len + s.len()].copy_from_slice(s.as_bytes());
-            *len += s.len();
-        };
+        // // helper closure für 3-stellig mit führenden Nullen
+        // let mut append_padded = |s: &str, buf: &mut [u8], len: &mut usize| {
+        //     let missing = 3 - s.len();
+        //     for _ in 0..missing {
+        //         buf[*len] = b'0';
+        //         *len += 1;
+        //     }
+        //     buf[*len..*len + s.len()].copy_from_slice(s.as_bytes());
+        //     *len += s.len();
+        // };
 
-        append_padded(r_str, &mut out, &mut len);
-        append_padded(g_str, &mut out, &mut len);
-        append_padded(b_str, &mut out, &mut len);
+        // append_padded(r_str, &mut out, &mut len);
+        // append_padded(g_str, &mut out, &mut len);
+        // append_padded(b_str, &mut out, &mut len);
 
-        // ab hier: führende Nullen vom Gesamtstring entfernen
-        let mut start = 0;
-        while start < len && out[start] == b'0' {
-            start += 1;
-        }
+        // // ab hier: führende Nullen vom Gesamtstring entfernen
+        // let mut start = 0;
+        // while start < len && out[start] == b'0' {
+        //     start += 1;
+        // }
 
-        // falls alles Nullen war, wenigstens eine "0" behalten
-        let msg = if start == len {
-            "0"
-        } else {
-            core::str::from_utf8(&out[start..len]).unwrap()
-        };
+        // // falls alles Nullen war, wenigstens eine "0" behalten
+        // let msg = if start == len {
+        //     "0"
+        // } else {
+        //     core::str::from_utf8(&out[start..len]).unwrap()
+        // };
 
-        defmt::println!("Received {}", msg);
-        match RgbColor::from_mqtt_string(msg) {
-            Ok(color) => {
-                defmt::println!(
-                    "Parsed RGB: R={}, G={}, B={}",
-                    color.red,
-                    color.green,
-                    color.blue
-                );
+        // defmt::println!("Received {}", msg);
+        // match RgbColor::from_mqtt_string(msg) {
+        //     Ok(color) => {
+        //         defmt::println!(
+        //             "Parsed RGB: R={}, G={}, B={}",
+        //             color.red,
+        //             color.green,
+        //             color.blue
+        //         );
 
-                let (r, g, b) = color.to_percent();
-                rgb_led.set_color(color.red, color.blue, color.green);
-            }
-            Err(_) => {
-                defmt::error!("Failed to parse RGB value: {}", msg);
-            }
-        }
+        //         let (r, g, b) = color.to_percent();
+        //         rgb_led.set_color(color.red, color.blue, color.green);
+        //     }
+        //     Err(_) => {
+        //         defmt::error!("Failed to parse RGB value: {}", msg);
+        //     }
+        // }
 
-        red_value += 15;
-        red_value %= 256;
-        green_value += 50;
-        green_value %= 256;
-        blue_value += 100;
-        blue_value %= 256;
+        // red_value += 15;
+        // red_value %= 256;
+        // green_value += 50;
+        // green_value %= 256;
+        // blue_value += 100;
+        // blue_value %= 256;
+
+        // ********** For testing - END  **********
 
         let mut text_buf = heapless::String::<128>::new();
         let _ = write!(
